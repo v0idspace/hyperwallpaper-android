@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">HyperWallpaper</string>
+    <string name="catalog_title">HyperOS Wallpapers</string>
+    <string name="favorites_title">Saved Favorites</string>
+    <string name="search_hint">Search wallpapers, authors, tags...</string>
+    <string name="set_wallpaper">Set Wallpaper</string>
+    <string name="download_master">Download Master</string>
+    <string name="author_portfolio">Browse Works</string>
+    <string name="homescreen">Home Screen</string>
+    <string name="lockscreen">Lock Screen</string>
+    <string name="both_screens">Both Screens</string>
+    <string name="system_crop_picker">Use System Crop &amp; Set</string>
+    <string name="wallpaper_set_success">Wallpaper set successfully!</string>
+    <string name="wallpaper_downloaded_success">Saved to Pictures/HyperWallpapers</string>
+</resources>

@@ -1,0 +1,83 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Layer 1: Rear Card Drop Shadow -->
+    <path
+        android:pathData="M38,24h32c4.4,0 8,3.6 8,8v44c0,4.4 -3.6,8 -8,8H38c-4.4,0 -8,-3.6 -8,-8V32c0,-4.4 3.6,-8 8,-8z"
+        android:fillColor="#40000000" />
+
+    <!-- Layer 2: Rear Frosted Translucent Card (Angled Depth) -->
+    <path
+        android:pathData="M36,22h32c4.4,0 8,3.6 8,8v44c0,4.4 -3.6,8 -8,8H36c-4.4,0 -8,-3.6 -8,-8V30c0,-4.4 3.6,-8 8,-8z"
+        android:fillColor="#1FFFFFFF"
+        android:strokeWidth="1"
+        android:strokeColor="#33FFFFFF" />
+
+    <!-- Layer 3: Front Card Drop Shadow -->
+    <path
+        android:pathData="M34,30h32c4.4,0 8,3.6 8,8v44c0,4.4 -3.6,8 -8,8H34c-4.4,0 -8,-3.6 -8,-8V38c0,-4.4 3.6,-8 8,-8z"
+        android:fillColor="#50000000" />
+
+    <!-- Layer 4: Front Vibrant HyperOS Card -->
+    <path
+        android:pathData="M32,28h32c4.4,0 8,3.6 8,8v44c0,4.4 -3.6,8 -8,8H32c-4.4,0 -8,-3.6 -8,-8V36c0,-4.4 3.6,-8 8,-8z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="32"
+                android:startY="28"
+                android:endX="72"
+                android:endY="88">
+                <item android:color="#FFFF7A00" android:offset="0.0" />
+                <item android:color="#FFFF5500" android:offset="0.6" />
+                <item android:color="#FFE03E00" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Card Inner Glass Highlight -->
+    <path
+        android:pathData="M32,28h32c4.4,0 8,3.6 8,8v12H24V36c0,-4.4 3.6,-8 8,-8z"
+        android:fillColor="#15FFFFFF" />
+
+    <!-- Layer 5: Glowing Sunset Sun -->
+    <path
+        android:pathData="M57,44m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="57"
+                android:centerY="44"
+                android:gradientRadius="7">
+                <item android:color="#FFFFF0D0" android:offset="0.0" />
+                <item android:color="#FFFFD180" android:offset="0.7" />
+                <item android:color="#FFFFAB40" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Layer 6: Distant Mountain Peak (Darker Purple-Orange Silhouette) -->
+    <path
+        android:pathData="M38,76 L48,56 L58,76 Z"
+        android:fillColor="#4D3B0066" />
+
+    <!-- Layer 7: Foreground Mountain Ridge (Clean crisp white-amber) -->
+    <path
+        android:pathData="M24,80 L44,52 L56,66 L64,58 L72,80 Z"
+        android:fillColor="#F0FFFFFF" />
+
+    <!-- Mountain Shadow Accent -->
+    <path
+        android:pathData="M44,52 L56,66 L48,78 L34,78 Z"
+        android:fillColor="#1A000000" />
+
+    <!-- Outer Card Border Glow -->
+    <path
+        android:pathData="M32,28h32c4.4,0 8,3.6 8,8v44c0,4.4 -3.6,8 -8,8H32c-4.4,0 -8,-3.6 -8,-8V36c0,-4.4 3.6,-8 8,-8z"
+        android:strokeWidth="1.2"
+        android:strokeColor="#4DFFFFFF" />
+</vector>
