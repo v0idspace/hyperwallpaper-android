@@ -15,6 +15,7 @@ import com.v0idspace.hyperwallpaper.ui.screens.detail.DetailScreen
 import com.v0idspace.hyperwallpaper.ui.screens.detail.DetailViewModel
 import com.v0idspace.hyperwallpaper.ui.screens.favorites.FavoritesScreen
 import com.v0idspace.hyperwallpaper.ui.screens.favorites.FavoritesViewModel
+import com.v0idspace.hyperwallpaper.util.DetailNavigationState
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -31,7 +32,9 @@ fun AppNavigation() {
             CatalogScreen(
                 viewModel = catalogViewModel,
                 onWallpaperClick = { wp, index ->
-                    navController.navigate("detail/${wp.id}/$index")
+                    val wallpapers = catalogViewModel.uiState.value.wallpapers
+                    DetailNavigationState.saveSession("catalog", wallpapers)
+                    navController.navigate("detail/catalog/${wp.id}/$index")
                 },
                 onOpenFavorites = {
                     navController.navigate("favorites")
@@ -40,16 +43,22 @@ fun AppNavigation() {
         }
 
         composable(
-            route = "detail/{wallpaperId}/{initialIndex}",
+            route = "detail/{sessionId}/{wallpaperId}/{initialIndex}",
             arguments = listOf(
+                navArgument("sessionId") { type = NavType.StringType },
                 navArgument("wallpaperId") { type = NavType.StringType },
                 navArgument("initialIndex") { type = NavType.IntType; defaultValue = 0 }
             )
         ) { backStackEntry ->
+            val sessionId = backStackEntry.arguments?.getString("sessionId").orEmpty()
             val wallpaperId = backStackEntry.arguments?.getString("wallpaperId").orEmpty()
             val initialIndex = backStackEntry.arguments?.getInt("initialIndex") ?: 0
-            val detailViewModel: DetailViewModel = viewModel()
+
+            // Scope ViewModel strictly to this unique backStackEntry so each depth level has its own state
+            val detailViewModel: DetailViewModel = viewModel(viewModelStoreOwner = backStackEntry)
+
             DetailScreen(
+                sessionId = sessionId,
                 initialWallpaperId = wallpaperId,
                 initialIndex = initialIndex,
                 viewModel = detailViewModel,
@@ -58,8 +67,9 @@ fun AppNavigation() {
                     val encoded = URLEncoder.encode(authorName, "UTF-8")
                     navController.navigate("author/$encoded")
                 },
-                onOpenRelated = { rel ->
-                    navController.navigate("detail/${rel.id}/-1")
+                onOpenRelated = { nextSessionId, rel, relIndex ->
+                    // Navigate to Depth N+1 with its own session list
+                    navController.navigate("detail/$nextSessionId/${rel.id}/$relIndex")
                 }
             )
         }
@@ -76,7 +86,11 @@ fun AppNavigation() {
                 viewModel = authorViewModel,
                 onBack = { navController.popBackStack() },
                 onWallpaperClick = { wp ->
-                    navController.navigate("detail/${wp.id}/-1")
+                    val authorWallpapers = authorViewModel.uiState.value.wallpapers
+                    val index = authorWallpapers.indexOfFirst { it.id == wp.id }.coerceAtLeast(0)
+                    val sessionId = "author_${System.currentTimeMillis()}"
+                    DetailNavigationState.saveSession(sessionId, authorWallpapers)
+                    navController.navigate("detail/$sessionId/${wp.id}/$index")
                 }
             )
         }
@@ -87,7 +101,11 @@ fun AppNavigation() {
                 viewModel = favoritesViewModel,
                 onBack = { navController.popBackStack() },
                 onWallpaperClick = { wp ->
-                    navController.navigate("detail/${wp.id}/-1")
+                    val favWallpapers = favoritesViewModel.favorites.value
+                    val index = favWallpapers.indexOfFirst { it.id == wp.id }.coerceAtLeast(0)
+                    val sessionId = "favorites_${System.currentTimeMillis()}"
+                    DetailNavigationState.saveSession(sessionId, favWallpapers)
+                    navController.navigate("detail/$sessionId/${wp.id}/$index")
                 }
             )
         }

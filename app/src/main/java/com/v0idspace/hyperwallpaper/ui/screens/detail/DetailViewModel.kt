@@ -8,6 +8,7 @@ import com.v0idspace.hyperwallpaper.HyperWallpaperApp
 import com.v0idspace.hyperwallpaper.data.model.Wallpaper
 import com.v0idspace.hyperwallpaper.data.repository.FavoritesRepository
 import com.v0idspace.hyperwallpaper.data.repository.WallpaperRepository
+import com.v0idspace.hyperwallpaper.util.DetailNavigationState
 import com.v0idspace.hyperwallpaper.util.MediaStoreHelper
 import com.v0idspace.hyperwallpaper.util.WallpaperManagerHelper
 import com.v0idspace.hyperwallpaper.util.WallpaperTarget
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 data class DetailUiState(
+    val swipeableList: List<Wallpaper> = emptyList(),
     val currentWallpaper: Wallpaper? = null,
     val isFavorite: Boolean = false,
     val isApplying: Boolean = false,
@@ -33,32 +35,56 @@ class DetailViewModel(
     private val favoritesRepository: FavoritesRepository = HyperWallpaperApp.instance.favoritesRepository
 ) : ViewModel() {
 
-    val catalogList: StateFlow<List<Wallpaper>> = wallpaperRepository.currentCatalogWallpapers
-
     private val _uiState = MutableStateFlow(DetailUiState())
     val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
 
     private var loadRelatedJob: Job? = null
     private var relatedPage = 0
 
-    fun loadInitial(wallpaperId: String) {
-        val cached = wallpaperRepository.getCachedWallpaper(wallpaperId)
-        if (cached != null) {
-            onWallpaperSelected(cached)
+    fun initSession(sessionId: String, initialWallpaperId: String, initialIndex: Int) {
+        // Retrieve the session list belonging specifically to this navigation level
+        val sessionList = DetailNavigationState.getSession(sessionId).orEmpty()
+
+        val activeList: List<Wallpaper>
+        val initialWp: Wallpaper?
+
+        if (sessionList.isNotEmpty()) {
+            activeList = sessionList
+            val validIndex = initialIndex.coerceIn(0, sessionList.size - 1)
+            initialWp = sessionList.getOrNull(validIndex) 
+                ?: sessionList.find { it.id == initialWallpaperId } 
+                ?: sessionList.first()
+        } else {
+            // Direct link or fallback: lookup by ID from repository cache
+            val cached = wallpaperRepository.getCachedWallpaper(initialWallpaperId)
+            activeList = listOfNotNull(cached)
+            initialWp = cached
+        }
+
+        _uiState.value = _uiState.value.copy(
+            swipeableList = activeList,
+            currentWallpaper = initialWp,
+            isFavorite = initialWp?.let { favoritesRepository.isFavorite(it.id) } ?: false
+        )
+
+        initialWp?.let {
+            loadRelated(it, reset = true)
         }
     }
 
-    fun onWallpaperSelected(wallpaper: Wallpaper) {
-        if (_uiState.value.currentWallpaper?.id == wallpaper.id) return
+    fun onPageChanged(page: Int) {
+        val list = _uiState.value.swipeableList
+        val newWp = list.getOrNull(page) ?: return
+        if (_uiState.value.currentWallpaper?.id == newWp.id) return
 
         _uiState.value = _uiState.value.copy(
-            currentWallpaper = wallpaper,
-            isFavorite = favoritesRepository.isFavorite(wallpaper.id),
+            currentWallpaper = newWp,
+            isFavorite = favoritesRepository.isFavorite(newWp.id),
             relatedWallpapers = emptyList(),
             isLoadingRelatedMore = false
         )
         relatedPage = 0
-        loadRelated(wallpaper, reset = true)
+        loadRelated(newWp, reset = true)
     }
 
     fun toggleUiVisibility() {
@@ -85,7 +111,7 @@ class DetailViewModel(
                 )
                 relatedPage++
 
-                // Deduplicate with existing list
+                // Strict deduplication against already displayed recommendations and current wallpaper
                 val currentIds = _uiState.value.relatedWallpapers.map { it.id }.toSet()
                 val filtered = newRelated.filter { !currentIds.contains(it.id) && it.id != wallpaper.id }
 

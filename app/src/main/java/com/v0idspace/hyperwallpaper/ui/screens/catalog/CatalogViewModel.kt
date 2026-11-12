@@ -125,9 +125,6 @@ class CatalogViewModel(
 
                 currentOffset += newItems.size
                 val updatedList = if (reset) newItems else _uiState.value.wallpapers + newItems
-                
-                // Store in repository so horizontal pager in detail view has access to the full list
-                repository.updateCurrentCatalogList(updatedList)
 
                 _uiState.value = _uiState.value.copy(
                     wallpapers = updatedList,

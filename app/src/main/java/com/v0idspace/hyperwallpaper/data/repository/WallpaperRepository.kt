@@ -2,9 +2,6 @@ package com.v0idspace.hyperwallpaper.data.repository
 
 import com.v0idspace.hyperwallpaper.data.api.XiaomiApiClient
 import com.v0idspace.hyperwallpaper.data.model.Wallpaper
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
 
@@ -13,15 +10,6 @@ class WallpaperRepository(
 ) {
     // In-memory cache for fast instant detail access
     private val wallpaperCache = ConcurrentHashMap<String, Wallpaper>()
-
-    // Current active catalog items for horizontal swiping in detail view
-    private val _currentCatalogWallpapers = MutableStateFlow<List<Wallpaper>>(emptyList())
-    val currentCatalogWallpapers: StateFlow<List<Wallpaper>> = _currentCatalogWallpapers.asStateFlow()
-
-    fun updateCurrentCatalogList(list: List<Wallpaper>) {
-        _currentCatalogWallpapers.value = list
-        cacheWallpapers(list)
-    }
 
     fun cacheWallpapers(wallpapers: List<Wallpaper>) {
         wallpapers.forEach { wallpaperCache[it.id] = it }
@@ -81,40 +69,59 @@ class WallpaperRepository(
     ): List<Wallpaper> {
         val isCn = region.equals("CN", ignoreCase = true)
 
-        // Step 1: Find high-quality recommendation seeds
-        // Filter out generic boilerplate tags
-        val candidateTags = wallpaper.tags.filter { tag ->
+        // 1. Gather all candidate semantic tags, filtering out boilerplate
+        val meaningfulTags = wallpaper.tags.filter { tag ->
             val t = tag.trim()
             t.isNotBlank() &&
                     !t.equals("VCG", ignoreCase = true) &&
                     !t.equals("Xiaomi", ignoreCase = true) &&
                     !t.equals("Featured", ignoreCase = true) &&
                     !t.equals("壁纸", ignoreCase = true) &&
-                    !t.equals("Official", ignoreCase = true)
+                    !t.equals("Official", ignoreCase = true) &&
+                    !t.equals("Nature", ignoreCase = true) && // Avoid repeating default root
+                    !t.equals("自然", ignoreCase = true)
         }
 
-        // Step 2: Select distinct tag based on pageIndex to ensure diverse endless discovery
-        val chosenTag: String = if (candidateTags.isNotEmpty()) {
-            candidateTags[pageIndex % candidateTags.size]
-        } else {
-            // If wallpaper has no semantic tags, extract key words from title or fallback to author
-            val words = wallpaper.title.split(" ")
-                .filter { it.length > 3 && !it.equals("with", ignoreCase = true) && !it.equals("that", ignoreCase = true) }
-            if (words.isNotEmpty()) {
-                words[pageIndex % words.size]
-            } else if (isCn) {
-                listOf("自然", "风景", "暗黑", "星空", "极简", "插画")[pageIndex % 6]
+        // 2. Extract meaningful keywords from the title if available
+        val titleWords = wallpaper.title.split(Regex("[\\s,._-]+"))
+            .filter { word ->
+                word.length > 3 &&
+                        !word.equals("wallpaper", ignoreCase = true) &&
+                        !word.equals("hyperos", ignoreCase = true) &&
+                        !word.equals("miui", ignoreCase = true) &&
+                        !word.equals("that", ignoreCase = true) &&
+                        !word.equals("with", ignoreCase = true) &&
+                        !word.equals("from", ignoreCase = true)
+            }
+
+        // 3. Build prioritized list of recommendation query seeds
+        val querySeeds = mutableListOf<String>()
+        querySeeds.addAll(meaningfulTags)
+        querySeeds.addAll(titleWords)
+        if (querySeeds.isEmpty()) {
+            if (isCn) {
+                querySeeds.addAll(listOf("风景", "暗黑", "星空", "极简", "插画", "动漫", "治愈", "壁纸"))
             } else {
-                wallpaper.category
+                querySeeds.addAll(listOf("Landscape", "Scenery", "Forest", "Mountain", "Sky", "Dark", "Space", "Art"))
             }
         }
 
-        // Step 3: Compute an offset that avoids repeating index 0 of the general category
-        // Each pageIndex advances through the tag's Lucene results
-        val queryOffset = (pageIndex * count) + (if (pageIndex == 0) (1..5).random() * count else 0)
+        // 4. Select query tag for this page
+        val targetTag = querySeeds[pageIndex % querySeeds.size]
 
-        val results = apiClient.fetchRelated(chosenTag, queryOffset, count, region)
-            .filter { it.id != wallpaper.id } // Strictly exclude the current wallpaper
+        // 5. Calculate query offset so we don't always pull the same top 12 items
+        val seed = (wallpaper.id.hashCode() and 0x7FFFFFFF) % 10
+        val queryOffset = (pageIndex * count) + (seed * 6)
+
+        var results = apiClient.fetchRelated(targetTag, queryOffset, count, region)
+            .filter { it.id != wallpaper.id }
+
+        // Fallback: If tag yielded too few items, query author's works or next seed
+        if (results.size < 4 && wallpaper.author.isNotBlank() && !wallpaper.author.contains("Xiaomi", ignoreCase = true)) {
+            val authorResults = apiClient.fetchAuthorPortfolio(wallpaper.author, pageIndex * count, count, region)
+                .filter { it.id != wallpaper.id }
+            results = (results + authorResults).distinctBy { it.id }
+        }
 
         cacheWallpapers(results)
         return results

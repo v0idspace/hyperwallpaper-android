@@ -10,7 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
@@ -43,47 +44,46 @@ import com.v0idspace.hyperwallpaper.ui.components.SetWallpaperDialog
 import com.v0idspace.hyperwallpaper.ui.components.WallpaperCard
 import com.v0idspace.hyperwallpaper.ui.theme.DarkBackground
 import com.v0idspace.hyperwallpaper.ui.theme.XiaomiOrange
+import com.v0idspace.hyperwallpaper.util.DetailNavigationState
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DetailScreen(
+    sessionId: String,
     initialWallpaperId: String,
     initialIndex: Int,
     viewModel: DetailViewModel,
     onBack: () -> Unit,
     onOpenAuthor: (String) -> Unit,
-    onOpenRelated: (Wallpaper) -> Unit
+    onOpenRelated: (String, Wallpaper, Int) -> Unit
 ) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
     val state by viewModel.uiState.collectAsState()
-    val catalogList by viewModel.catalogList.collectAsState()
     val listState = rememberLazyListState()
     var showSetDialog by remember { mutableStateOf(false) }
 
-    // If catalogList is available, initialize pager to initialIndex
-    val effectiveList = if (catalogList.isNotEmpty()) catalogList else listOfNotNull(state.currentWallpaper)
-    val startIndex = if (initialIndex >= 0 && initialIndex < effectiveList.size) initialIndex else 0
-    val pagerState = rememberPagerState(initialPage = startIndex) { effectiveList.size }
-
-    // Sync active pager page with ViewModel
-    LaunchedEffect(pagerState.currentPage, effectiveList) {
-        if (effectiveList.isNotEmpty() && pagerState.currentPage < effectiveList.size) {
-            viewModel.onWallpaperSelected(effectiveList[pagerState.currentPage])
-        }
-    }
-
-    LaunchedEffect(initialWallpaperId) {
-        if (effectiveList.isEmpty()) {
-            viewModel.loadInitial(initialWallpaperId)
-        }
+    LaunchedEffect(sessionId, initialWallpaperId) {
+        viewModel.initSession(sessionId, initialWallpaperId, initialIndex)
     }
 
     LaunchedEffect(state.message) {
         state.message?.let {
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
             viewModel.clearMessage()
+        }
+    }
+
+    val swipeList = state.swipeableList
+    val pageCount = if (swipeList.isNotEmpty()) swipeList.size else 1
+    val startPage = if (swipeList.isNotEmpty()) initialIndex.coerceIn(0, swipeList.size - 1) else 0
+    val pagerState = rememberPagerState(initialPage = startPage) { pageCount }
+
+    // Sync HorizontalPager page changes with ViewModel
+    LaunchedEffect(pagerState.currentPage, swipeList) {
+        if (swipeList.isNotEmpty() && pagerState.currentPage < swipeList.size) {
+            viewModel.onPageChanged(pagerState.currentPage)
         }
     }
 
@@ -154,7 +154,7 @@ fun DetailScreen(
                             state = pagerState,
                             modifier = Modifier.fillMaxSize()
                         ) { page ->
-                            val wp = effectiveList.getOrNull(page) ?: currentWp
+                            val wp = swipeList.getOrNull(page) ?: currentWp
                             Box(modifier = Modifier.fillMaxSize()) {
                                 // Fast Image Loading: Use lightweight thumbnail directly from cache for 0ms lag!
                                 AsyncImage(
@@ -168,6 +168,38 @@ fun DetailScreen(
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
                                 )
+                            }
+                        }
+
+                        // Scroll Down Cue (Only visible when UI is toggled on)
+                        AnimatedVisibility(
+                            visible = state.isUiVisible,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 24.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+                                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "Scroll for details & recommendations",
+                                        color = Color.White.copy(alpha = 0.9f),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowDown,
+                                        contentDescription = null,
+                                        tint = XiaomiOrange,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -311,18 +343,24 @@ fun DetailScreen(
 
                 // Section 3: 2-Column Vertical Grid of Recommended Wallpapers
                 val pairs = state.relatedWallpapers.chunked(2)
-                items(pairs) { rowWallpapers ->
+                itemsIndexed(pairs) { rowIndex, rowWallpapers ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 6.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        for (wp in rowWallpapers) {
+                        for ((itemIndex, wp) in rowWallpapers.withIndex()) {
+                            val absoluteIndex = (rowIndex * 2) + itemIndex
                             WallpaperCard(
                                 wallpaper = wp,
                                 isDense = false,
-                                onClick = { onOpenRelated(wp) },
+                                onClick = {
+                                    // Save current recommendation list as session for Depth 2
+                                    val nextSessionId = "rec_${wp.id}_${System.currentTimeMillis()}"
+                                    DetailNavigationState.saveSession(nextSessionId, state.relatedWallpapers)
+                                    onOpenRelated(nextSessionId, wp, absoluteIndex)
+                                },
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -378,14 +416,14 @@ fun DetailScreen(
                     }
 
                     // Index Pill Indicator (e.g. "14 / 60")
-                    if (effectiveList.size > 1) {
+                    if (swipeList.size > 1) {
                         Box(
                             modifier = Modifier
                                 .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = "${pagerState.currentPage + 1} / ${effectiveList.size}",
+                                text = "${pagerState.currentPage + 1} / ${swipeList.size}",
                                 color = Color.White,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium
