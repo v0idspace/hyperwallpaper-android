@@ -20,6 +20,7 @@ data class CatalogUiState(
     val wallpapers: List<Wallpaper> = emptyList(),
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
+    val isShuffleEnabled: Boolean = false,
     val error: String? = null,
     val searchQuery: String = "",
     val isSearching: Boolean = false,
@@ -68,6 +69,12 @@ class CatalogViewModel(
         _uiState.value = _uiState.value.copy(isDenseGrid = !_uiState.value.isDenseGrid)
     }
 
+    fun toggleShuffle() {
+        val newShuffle = !_uiState.value.isShuffleEnabled
+        _uiState.value = _uiState.value.copy(isShuffleEnabled = newShuffle)
+        loadWallpapers(reset = true)
+    }
+
     fun search(query: String) {
         _uiState.value = _uiState.value.copy(
             searchQuery = query,
@@ -111,13 +118,19 @@ class CatalogViewModel(
                         subtag = state.selectedSubtag,
                         offset = currentOffset,
                         count = 12,
-                        region = state.currentRegion
+                        region = state.currentRegion,
+                        randomizeSeed = state.isShuffleEnabled
                     )
                 }
 
                 currentOffset += newItems.size
+                val updatedList = if (reset) newItems else _uiState.value.wallpapers + newItems
+                
+                // Store in repository so horizontal pager in detail view has access to the full list
+                repository.updateCurrentCatalogList(updatedList)
+
                 _uiState.value = _uiState.value.copy(
-                    wallpapers = if (reset) newItems else _uiState.value.wallpapers + newItems,
+                    wallpapers = updatedList,
                     isLoading = false,
                     isLoadingMore = false
                 )

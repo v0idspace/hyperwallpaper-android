@@ -30,8 +30,8 @@ fun AppNavigation() {
             val catalogViewModel: CatalogViewModel = viewModel()
             CatalogScreen(
                 viewModel = catalogViewModel,
-                onWallpaperClick = { wp ->
-                    navController.navigate("detail/${wp.id}")
+                onWallpaperClick = { wp, index ->
+                    navController.navigate("detail/${wp.id}/$index")
                 },
                 onOpenFavorites = {
                     navController.navigate("favorites")
@@ -40,13 +40,18 @@ fun AppNavigation() {
         }
 
         composable(
-            route = "detail/{wallpaperId}",
-            arguments = listOf(navArgument("wallpaperId") { type = NavType.StringType })
+            route = "detail/{wallpaperId}/{initialIndex}",
+            arguments = listOf(
+                navArgument("wallpaperId") { type = NavType.StringType },
+                navArgument("initialIndex") { type = NavType.IntType; defaultValue = 0 }
+            )
         ) { backStackEntry ->
             val wallpaperId = backStackEntry.arguments?.getString("wallpaperId").orEmpty()
+            val initialIndex = backStackEntry.arguments?.getInt("initialIndex") ?: 0
             val detailViewModel: DetailViewModel = viewModel()
             DetailScreen(
-                wallpaperId = wallpaperId,
+                initialWallpaperId = wallpaperId,
+                initialIndex = initialIndex,
                 viewModel = detailViewModel,
                 onBack = { navController.popBackStack() },
                 onOpenAuthor = { authorName ->
@@ -54,7 +59,7 @@ fun AppNavigation() {
                     navController.navigate("author/$encoded")
                 },
                 onOpenRelated = { rel ->
-                    navController.navigate("detail/${rel.id}")
+                    navController.navigate("detail/${rel.id}/-1")
                 }
             )
         }
@@ -71,7 +76,7 @@ fun AppNavigation() {
                 viewModel = authorViewModel,
                 onBack = { navController.popBackStack() },
                 onWallpaperClick = { wp ->
-                    navController.navigate("detail/${wp.id}")
+                    navController.navigate("detail/${wp.id}/-1")
                 }
             )
         }
@@ -82,7 +87,7 @@ fun AppNavigation() {
                 viewModel = favoritesViewModel,
                 onBack = { navController.popBackStack() },
                 onWallpaperClick = { wp ->
-                    navController.navigate("detail/${wp.id}")
+                    navController.navigate("detail/${wp.id}/-1")
                 }
             )
         }

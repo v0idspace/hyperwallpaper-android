@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -11,6 +12,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,7 +28,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -42,9 +44,11 @@ import com.v0idspace.hyperwallpaper.ui.components.WallpaperCard
 import com.v0idspace.hyperwallpaper.ui.theme.DarkBackground
 import com.v0idspace.hyperwallpaper.ui.theme.XiaomiOrange
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DetailScreen(
-    wallpaperId: String,
+    initialWallpaperId: String,
+    initialIndex: Int,
     viewModel: DetailViewModel,
     onBack: () -> Unit,
     onOpenAuthor: (String) -> Unit,
@@ -54,11 +58,26 @@ fun DetailScreen(
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
     val state by viewModel.uiState.collectAsState()
+    val catalogList by viewModel.catalogList.collectAsState()
     val listState = rememberLazyListState()
     var showSetDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(wallpaperId) {
-        viewModel.loadWallpaper(wallpaperId)
+    // If catalogList is available, initialize pager to initialIndex
+    val effectiveList = if (catalogList.isNotEmpty()) catalogList else listOfNotNull(state.currentWallpaper)
+    val startIndex = if (initialIndex >= 0 && initialIndex < effectiveList.size) initialIndex else 0
+    val pagerState = rememberPagerState(initialPage = startIndex) { effectiveList.size }
+
+    // Sync active pager page with ViewModel
+    LaunchedEffect(pagerState.currentPage, effectiveList) {
+        if (effectiveList.isNotEmpty() && pagerState.currentPage < effectiveList.size) {
+            viewModel.onWallpaperSelected(effectiveList[pagerState.currentPage])
+        }
+    }
+
+    LaunchedEffect(initialWallpaperId) {
+        if (effectiveList.isEmpty()) {
+            viewModel.loadInitial(initialWallpaperId)
+        }
     }
 
     LaunchedEffect(state.message) {
@@ -68,21 +87,20 @@ fun DetailScreen(
         }
     }
 
-    // Infinite scroll listener for similar wallpapers as user scrolls down
+    // Infinite scroll listener for 2-column similar wallpapers grid
     LaunchedEffect(listState) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
             .collect { lastIndex ->
                 val chunkedCount = (state.relatedWallpapers.size + 1) / 2
-                // When approaching the bottom of the list
                 if (lastIndex != null && lastIndex >= chunkedCount - 2 && state.relatedWallpapers.isNotEmpty()) {
                     viewModel.loadMoreRelated()
                 }
             }
     }
 
-    val wallpaper = state.wallpaper
+    val currentWp = state.currentWallpaper
 
-    if (showSetDialog && wallpaper != null) {
+    if (showSetDialog && currentWp != null) {
         SetWallpaperDialog(
             isApplying = state.isApplying,
             onDismiss = { showSetDialog = false },
@@ -105,13 +123,13 @@ fun DetailScreen(
             .fillMaxSize()
             .background(DarkBackground)
     ) {
-        if (wallpaper == null) {
+        if (currentWp == null) {
             CircularProgressIndicator(
                 color = XiaomiOrange,
                 modifier = Modifier.align(Alignment.Center)
             )
         } else {
-            // Vertically scrollable page: Top hero preview -> Metadata & Actions -> 2-Column Similar Wallpapers Grid
+            // Vertically scrollable page: Hero Swipeable Wallpaper -> Metadata & Actions -> 2-Column Similar Wallpapers Grid
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
@@ -119,7 +137,7 @@ fun DetailScreen(
                     bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp
                 )
             ) {
-                // Section 1: Hero Wallpaper Image taking full screen height
+                // Section 1: Hero Swipable Horizontal Pager (Swipes left-to-right between wallpapers)
                 item {
                     Box(
                         modifier = Modifier
@@ -132,32 +150,26 @@ fun DetailScreen(
                                 viewModel.toggleUiVisibility()
                             }
                     ) {
-                        // Progressive Loading: Instant thumbnail placeholder followed by full preview
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(wallpaper.previewUrl)
-                                .placeholderMemoryCacheKey(wallpaper.thumbnailUrl)
-                                .crossfade(true)
-                                .diskCachePolicy(CachePolicy.ENABLED)
-                                .memoryCachePolicy(CachePolicy.ENABLED)
-                                .build(),
-                            contentDescription = wallpaper.title,
-                            contentScale = ContentScale.Crop,
+                        HorizontalPager(
+                            state = pagerState,
                             modifier = Modifier.fillMaxSize()
-                        )
-
-                        // Subtle bottom gradient hint to scroll down
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(160.dp)
-                                .align(Alignment.BottomCenter)
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(Color.Transparent, DarkBackground)
-                                    )
+                        ) { page ->
+                            val wp = effectiveList.getOrNull(page) ?: currentWp
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                // Fast Image Loading: Use lightweight thumbnail directly from cache for 0ms lag!
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(wp.thumbnailUrl)
+                                        .diskCachePolicy(CachePolicy.ENABLED)
+                                        .memoryCachePolicy(CachePolicy.ENABLED)
+                                        .crossfade(false)
+                                        .build(),
+                                    contentDescription = wp.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
                                 )
-                        )
+                            }
+                        }
                     }
                 }
 
@@ -166,7 +178,7 @@ fun DetailScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 12.dp)
+                            .padding(horizontal = 20.dp, vertical = 16.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -175,7 +187,7 @@ fun DetailScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = wallpaper.title,
+                                    text = currentWp.title,
                                     color = Color.White,
                                     fontSize = 22.sp,
                                     fontWeight = FontWeight.Bold
@@ -185,14 +197,14 @@ fun DetailScreen(
 
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.clickable { onOpenAuthor(wallpaper.author) }
+                                    modifier = Modifier.clickable { onOpenAuthor(currentWp.author) }
                                 ) {
                                     Text(
-                                        text = "By ${wallpaper.author}",
+                                        text = "By ${currentWp.author}",
                                         color = Color(0xFFD1D5DB),
                                         fontSize = 14.sp
                                     )
-                                    if (wallpaper.verifiedStudio) {
+                                    if (currentWp.verifiedStudio) {
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Icon(
                                             imageVector = Icons.Default.Verified,
@@ -210,7 +222,7 @@ fun DetailScreen(
                                     .padding(horizontal = 10.dp, vertical = 6.dp)
                             ) {
                                 Text(
-                                    text = "${wallpaper.width}x${wallpaper.height} Master",
+                                    text = "${currentWp.width}x${currentWp.height} Master",
                                     color = Color.White,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium
@@ -219,13 +231,13 @@ fun DetailScreen(
                         }
 
                         // Tags pill row
-                        if (wallpaper.tags.isNotEmpty()) {
+                        if (currentWp.tags.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(10.dp))
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                wallpaper.tags.take(4).forEach { tag ->
+                                currentWp.tags.take(4).forEach { tag ->
                                     Box(
                                         modifier = Modifier
                                             .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
@@ -289,7 +301,7 @@ fun DetailScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Endless recommendations inspired by this style",
+                            text = "Fresh recommendations derived from this style",
                             color = Color(0xFF9CA3AF),
                             fontSize = 12.sp
                         )
@@ -297,7 +309,7 @@ fun DetailScreen(
                     }
                 }
 
-                // Section 3: 2-Column Vertical Grid of Similar Wallpapers
+                // Section 3: 2-Column Vertical Grid of Recommended Wallpapers
                 val pairs = state.relatedWallpapers.chunked(2)
                 items(pairs) { rowWallpapers ->
                     Row(
@@ -314,7 +326,6 @@ fun DetailScreen(
                                 modifier = Modifier.weight(1f)
                             )
                         }
-                        // If odd number in last row, pad with empty space
                         if (rowWallpapers.size == 1) {
                             Spacer(modifier = Modifier.weight(1f))
                         }
@@ -364,6 +375,22 @@ fun DetailScreen(
                             contentDescription = "Back",
                             tint = Color.White
                         )
+                    }
+
+                    // Index Pill Indicator (e.g. "14 / 60")
+                    if (effectiveList.size > 1) {
+                        Box(
+                            modifier = Modifier
+                                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "${pagerState.currentPage + 1} / ${effectiveList.size}",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
 
                     // Favorite Button

@@ -4,15 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,7 +27,7 @@ import com.v0idspace.hyperwallpaper.ui.theme.XiaomiOrange
 @Composable
 fun CatalogScreen(
     viewModel: CatalogViewModel,
-    onWallpaperClick: (Wallpaper) -> Unit,
+    onWallpaperClick: (Wallpaper, Int) -> Unit,
     onOpenFavorites: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -73,6 +69,15 @@ fun CatalogScreen(
                         )
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Shuffle / Discover Random toggle
+                            IconButton(onClick = { viewModel.toggleShuffle() }) {
+                                Icon(
+                                    imageVector = Icons.Default.Shuffle,
+                                    contentDescription = "Discover Random Pool",
+                                    tint = if (state.isShuffleEnabled) XiaomiOrange else Color.White
+                                )
+                            }
+
                             // Region Selector
                             Box {
                                 IconButton(onClick = { regionMenuOpen = true }) {
@@ -229,11 +234,11 @@ fun CatalogScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(state.wallpapers, key = { it.id }) { wallpaper ->
+                    itemsIndexed(state.wallpapers, key = { _, item -> item.id }) { index, wallpaper ->
                         WallpaperCard(
                             wallpaper = wallpaper,
                             isDense = state.isDenseGrid,
-                            onClick = { onWallpaperClick(wallpaper) }
+                            onClick = { onWallpaperClick(wallpaper, index) }
                         )
                     }
 
