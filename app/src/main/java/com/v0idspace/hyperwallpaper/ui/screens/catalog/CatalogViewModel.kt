@@ -25,6 +25,7 @@ data class CatalogUiState(
     val searchQuery: String = "",
     val isSearching: Boolean = false,
     val isDenseGrid: Boolean = false,
+    val filterAi: Boolean = false,
     val currentRegion: String = "EEA"
 )
 
@@ -78,6 +79,12 @@ class CatalogViewModel(
         loadWallpapers(reset = true)
     }
 
+    fun toggleFilterAi() {
+        val newFilter = !_uiState.value.filterAi
+        _uiState.value = _uiState.value.copy(filterAi = newFilter)
+        loadWallpapers(reset = true)
+    }
+
     fun search(query: String) {
         _uiState.value = _uiState.value.copy(
             searchQuery = query,
@@ -114,7 +121,7 @@ class CatalogViewModel(
             try {
                 val state = _uiState.value
                 val newItems = if (state.isSearching) {
-                    repository.search(state.searchQuery, currentOffset, 12, state.currentRegion)
+                    repository.search(state.searchQuery, currentOffset, 12, state.currentRegion, filterAi = state.filterAi)
                 } else {
                     repository.getCatalog(
                         categoryName = state.selectedCategory.id,
@@ -122,7 +129,8 @@ class CatalogViewModel(
                         offset = currentOffset,
                         count = 12,
                         region = state.currentRegion,
-                        randomizeSeed = state.isShuffleEnabled
+                        randomizeSeed = state.isShuffleEnabled,
+                        filterAi = state.filterAi
                     )
                 }
 

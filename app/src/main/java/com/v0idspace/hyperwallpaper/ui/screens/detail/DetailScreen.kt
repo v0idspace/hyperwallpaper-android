@@ -29,7 +29,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -54,6 +54,8 @@ import coil.request.ImageRequest
 import com.v0idspace.hyperwallpaper.data.model.Wallpaper
 import com.v0idspace.hyperwallpaper.ui.components.SetWallpaperDialog
 import com.v0idspace.hyperwallpaper.ui.components.WallpaperCard
+import com.v0idspace.hyperwallpaper.ui.components.WallpaperInfoDialog
+import com.v0idspace.hyperwallpaper.ui.components.WallpaperPreviewOverlay
 import com.v0idspace.hyperwallpaper.ui.theme.DarkBackground
 import com.v0idspace.hyperwallpaper.ui.theme.DarkSurface
 import com.v0idspace.hyperwallpaper.ui.theme.XiaomiOrange
@@ -149,7 +151,22 @@ fun DetailScreen(
         )
     }
 
-    // Modal Bottom Sheet for Details & Recommendations - Expands seamlessly all the way to top!
+    // Info Dialog: Shows detailed specifications, creator portfolio scale, and server editorial story
+    if (state.isInfoDialogVisible && currentWp != null) {
+        WallpaperInfoDialog(
+            wallpaper = currentWp,
+            productDetail = state.productDetail,
+            isLoadingDetail = state.isLoadingDetail,
+            onDismiss = { viewModel.setInfoDialogVisible(false) },
+            onOpenAuthor = onOpenAuthor,
+            onTagClick = { tag ->
+                viewModel.filterRelatedByTag(tag)
+                showDetailsSheet = true
+            }
+        )
+    }
+
+    // Modal Bottom Sheet for Similar Wallpapers - Expands seamlessly all the way to top!
     if (showDetailsSheet && currentWp != null) {
         val sheetListState = rememberLazyGridState()
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
@@ -190,101 +207,6 @@ fun DetailScreen(
                     .fillMaxHeight(0.94f) // Expandable to top of screen
                     .padding(horizontal = 20.dp)
             ) {
-                // Title & Author Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = currentWp.title,
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable {
-                                showDetailsSheet = false
-                                onOpenAuthor(currentWp.author)
-                            }
-                        ) {
-                            Text(
-                                text = "By ${currentWp.author}",
-                                color = XiaomiOrange,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            if (currentWp.verifiedStudio) {
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(
-                                    imageVector = Icons.Default.Verified,
-                                    contentDescription = "Verified Studio",
-                                    tint = XiaomiOrange,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    // Resolution & Master File Size Badge
-                    val sizeFormatted = if (currentWp.fileSizeInKB > 1024) {
-                        String.format("%.1f MB Master", currentWp.fileSizeInKB / 1024.0)
-                    } else if (currentWp.fileSizeInKB > 0) {
-                        "${currentWp.fileSizeInKB} KB Master"
-                    } else {
-                        "1080p Master"
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = sizeFormatted,
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-
-                // Interactive Clickable Tags Pill Row
-                if (currentWp.tags.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        currentWp.tags.take(5).forEach { tag ->
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color.White.copy(alpha = 0.1f))
-                                    .clickable {
-                                        // Filter recommendations directly by this tag
-                                        viewModel.filterRelatedByTag(tag)
-                                    }
-                                    .padding(horizontal = 10.dp, vertical = 5.dp)
-                            ) {
-                                Text(
-                                    text = "#$tag",
-                                    color = Color(0xFFE5E7EB),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
                 // Similar Wallpapers Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -296,13 +218,13 @@ fun DetailScreen(
                             imageVector = Icons.Default.AutoAwesome,
                             contentDescription = null,
                             tint = XiaomiOrange,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Similar Wallpapers",
                             color = Color.White,
-                            fontSize = 17.sp,
+                            fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -314,9 +236,9 @@ fun DetailScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // Recommendations Grid inside Bottom Sheet - Takes full vertical space!
+                // Recommendations Grid inside Bottom Sheet
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     state = sheetListState,
@@ -425,6 +347,9 @@ fun DetailScreen(
                                     translationY = offset.y
                                 }
                         )
+
+                        // Live Preview Overlays: MIUI Lockscreen & Homescreen Mockups
+                        WallpaperPreviewOverlay(mode = state.previewOverlayMode)
                     }
                 }
             }
@@ -443,7 +368,7 @@ fun DetailScreen(
                         .fillMaxWidth()
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)
+                                colors = listOf(Color.Black.copy(alpha = 0.75f), Color.Transparent)
                             )
                         )
                         .statusBarsPadding()
@@ -485,17 +410,17 @@ fun DetailScreen(
                             }
                         }
 
-                        // Action Icons: Details Sheet & Favorite
+                        // Action Icons: Info Dialog & Favorite
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             IconButton(
-                                onClick = { showDetailsSheet = true },
+                                onClick = { viewModel.setInfoDialogVisible(true) },
                                 modifier = Modifier
                                     .size(42.dp)
                                     .background(Color.Black.copy(alpha = 0.5f), CircleShape)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Info,
-                                    contentDescription = "Details & Similar",
+                                    contentDescription = "Wallpaper Specs & Story",
                                     tint = Color.White
                                 )
                             }
@@ -513,6 +438,46 @@ fun DetailScreen(
                                 )
                             }
                         }
+                    }
+                }
+            }
+
+            // Preview Mode Floating Selector Pill (Clean | Lockscreen | Homescreen)
+            AnimatedVisibility(
+                visible = state.isUiVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 96.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color.Black.copy(alpha = 0.65f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                    modifier = Modifier.clickable { viewModel.cyclePreviewOverlayMode() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Smartphone,
+                            contentDescription = null,
+                            tint = XiaomiOrange,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = when (state.previewOverlayMode) {
+                                PreviewOverlayMode.CLEAN -> "View: Clean Wallpaper"
+                                PreviewOverlayMode.LOCKSCREEN -> "View: Lock Screen Mockup"
+                                PreviewOverlayMode.HOMESCREEN -> "View: Home Screen Mockup"
+                            },
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
@@ -597,7 +562,7 @@ fun DetailScreen(
                             }
                         }
 
-                        // Quick Similar Button
+                        // Similar Wallpapers Button (Opens endless recommendations sheet)
                         IconButton(
                             onClick = { showDetailsSheet = true },
                             modifier = Modifier

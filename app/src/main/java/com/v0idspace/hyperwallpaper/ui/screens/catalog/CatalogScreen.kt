@@ -192,6 +192,15 @@ fun CatalogScreen(
                                 )
                             }
 
+                            // AI Filter Toggle
+                            IconButton(onClick = { viewModel.toggleFilterAi() }) {
+                                Icon(
+                                    imageVector = if (state.filterAi) Icons.Default.FilterAlt else Icons.Default.FilterAltOff,
+                                    contentDescription = "Filter AI Wallpapers",
+                                    tint = if (state.filterAi) XiaomiOrange else Color.White
+                                )
+                            }
+
                             // Search
                             IconButton(onClick = { searchActive = true }) {
                                 Icon(

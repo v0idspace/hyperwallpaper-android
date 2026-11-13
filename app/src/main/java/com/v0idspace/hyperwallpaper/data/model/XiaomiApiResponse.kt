@@ -35,3 +35,32 @@ data class XiaomiProduct(
     @SerializedName("innerTags") val innerTags: List<String>? = null,
     @SerializedName("fileSizeInKB") val fileSizeInKB: Long? = 0
 )
+
+data class XiaomiProductDetailResponse(
+    @SerializedName("apiCode") val apiCode: Int? = 0,
+    @SerializedName("apiData") val apiData: XiaomiProductDetailData? = null
+)
+
+data class XiaomiProductDetailData(
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("designerName") val designerName: String? = null,
+    @SerializedName("designerIcon") val designerIcon: String? = null,
+    @SerializedName("designerMiId") val designerMiId: String? = null,
+    @SerializedName("productCount") val productCount: Int? = 0,
+    @SerializedName("tags") val tags: String? = null,
+    @SerializedName("fileSize") val fileSize: Long? = 0,
+    @SerializedName("status") val status: String? = null
+)
+
+data class ProductDetail(
+    val id: String,
+    val name: String,
+    val designerName: String,
+    val designerIcon: String,
+    val designerMiId: String,
+    val productCount: Int,
+    val tags: List<String>,
+    val fileSizeBytes: Long,
+    val formattedFileSize: String,
+    val editorialStory: String
+)

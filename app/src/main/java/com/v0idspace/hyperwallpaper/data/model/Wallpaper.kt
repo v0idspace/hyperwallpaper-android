@@ -11,11 +11,43 @@ data class Wallpaper(
     val tags: List<String> = emptyList(),
     val category: String = "Featured",
     val downloadCount: Long = 0,
-    val fileSizeInKB: Long = 0,
+    val fileSizeBytes: Long = 0,
     val width: Int = 1080,
     val height: Int = 2400,
     val verifiedStudio: Boolean = true
-)
+) {
+    val formattedFileSize: String
+        get() {
+            if (fileSizeBytes <= 0) return "HQ Master"
+            val mb = fileSizeBytes / (1024.0 * 1024.0)
+            return if (mb >= 1.0) {
+                String.format("%.2f MB Master", mb)
+            } else {
+                val kb = fileSizeBytes / 1024.0
+                String.format("%.1f KB Master", kb)
+            }
+        }
+
+    val isAiGenerated: Boolean
+        get() {
+            val aiWordRegex = Regex("(^|[^a-zA-Z0-9])(ai|aigc)($|[^a-zA-Z0-9])", RegexOption.IGNORE_CASE)
+            val specificKeywords = listOf("人工智能", "midjourney", "stablediffusion", "dall-e", "ai绘画", "ai壁纸")
+            
+            val titleLower = title.lowercase()
+            val authorLower = author.lowercase()
+
+            if (aiWordRegex.containsMatchIn(title) || aiWordRegex.containsMatchIn(author)) return true
+            if (specificKeywords.any { titleLower.contains(it) || authorLower.contains(it) }) return true
+
+            for (tag in tags) {
+                val tagLower = tag.lowercase().trim()
+                if (aiWordRegex.containsMatchIn(tagLower)) return true
+                if (specificKeywords.any { tagLower.contains(it) }) return true
+            }
+
+            return false
+        }
+}
 
 data class Category(
     val id: String,

@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.v0idspace.hyperwallpaper.HyperWallpaperApp
+import com.v0idspace.hyperwallpaper.data.model.ProductDetail
 import com.v0idspace.hyperwallpaper.data.model.Wallpaper
 import com.v0idspace.hyperwallpaper.data.repository.FavoritesRepository
 import com.v0idspace.hyperwallpaper.data.repository.WallpaperRepository
@@ -18,17 +19,28 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+enum class PreviewOverlayMode {
+    CLEAN,
+    LOCKSCREEN,
+    HOMESCREEN
+}
+
 data class DetailUiState(
     val swipeableList: List<Wallpaper> = emptyList(),
     val currentWallpaper: Wallpaper? = null,
+    val productDetail: ProductDetail? = null,
     val currentIndex: Int = 0,
     val isFavorite: Boolean = false,
     val isApplying: Boolean = false,
     val isDownloading: Boolean = false,
     val isUiVisible: Boolean = true,
     val isBottomSheetVisible: Boolean = false,
+    val isInfoDialogVisible: Boolean = false,
+    val previewOverlayMode: PreviewOverlayMode = PreviewOverlayMode.CLEAN,
+    val filterAi: Boolean = false,
     val relatedWallpapers: List<Wallpaper> = emptyList(),
     val isLoadingRelatedMore: Boolean = false,
+    val isLoadingDetail: Boolean = false,
     val message: String? = null
 )
 
@@ -78,6 +90,7 @@ class DetailViewModel(
 
         initialWp?.let {
             loadRelated(it, reset = true)
+            fetchDetail(it.id)
         }
     }
 
@@ -88,6 +101,7 @@ class DetailViewModel(
 
         _uiState.value = _uiState.value.copy(
             currentWallpaper = newWp,
+            productDetail = null,
             currentIndex = page,
             isFavorite = favoritesRepository.isFavorite(newWp.id),
             relatedWallpapers = emptyList(),
@@ -95,14 +109,37 @@ class DetailViewModel(
         )
         relatedPage = 0
         loadRelated(newWp, reset = true)
+        fetchDetail(newWp.id)
+    }
+
+    fun cyclePreviewOverlayMode() {
+        val nextMode = when (_uiState.value.previewOverlayMode) {
+            PreviewOverlayMode.CLEAN -> PreviewOverlayMode.LOCKSCREEN
+            PreviewOverlayMode.LOCKSCREEN -> PreviewOverlayMode.HOMESCREEN
+            PreviewOverlayMode.HOMESCREEN -> PreviewOverlayMode.CLEAN
+        }
+        _uiState.value = _uiState.value.copy(previewOverlayMode = nextMode)
+    }
+
+    fun setPreviewOverlayMode(mode: PreviewOverlayMode) {
+        _uiState.value = _uiState.value.copy(previewOverlayMode = mode)
     }
 
     fun toggleUiVisibility() {
         _uiState.value = _uiState.value.copy(isUiVisible = !_uiState.value.isUiVisible)
     }
 
-    fun setBottomSheetVisible(visible: Boolean) {
-        _uiState.value = _uiState.value.copy(isBottomSheetVisible = visible)
+    fun setInfoDialogVisible(visible: Boolean) {
+        _uiState.value = _uiState.value.copy(isInfoDialogVisible = visible)
+    }
+
+    fun toggleFilterAi() {
+        val newFilter = !_uiState.value.filterAi
+        _uiState.value = _uiState.value.copy(filterAi = newFilter)
+        _uiState.value.currentWallpaper?.let {
+            relatedPage = 0
+            loadRelated(it, reset = true)
+        }
     }
 
     fun loadMoreRelated() {
@@ -121,7 +158,8 @@ class DetailViewModel(
                 val newRelated = wallpaperRepository.getRelatedWallpapers(
                     wallpaper = wallpaper,
                     pageIndex = relatedPage,
-                    count = 12
+                    count = 12,
+                    filterAi = _uiState.value.filterAi
                 )
                 relatedPage++
 
@@ -147,7 +185,7 @@ class DetailViewModel(
                 isLoadingRelatedMore = true
             )
             try {
-                val results = wallpaperRepository.search(tag, 0, 18, "EEA")
+                val results = wallpaperRepository.search(tag, 0, 18, "EEA", filterAi = _uiState.value.filterAi)
                     .filter { it.id != wp.id }
                 _uiState.value = _uiState.value.copy(
                     relatedWallpapers = results,
@@ -156,6 +194,17 @@ class DetailViewModel(
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isLoadingRelatedMore = false)
             }
+        }
+    }
+
+    private fun fetchDetail(uuid: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoadingDetail = true)
+            val detail = wallpaperRepository.getProductDetail(uuid)
+            _uiState.value = _uiState.value.copy(
+                productDetail = detail,
+                isLoadingDetail = false
+            )
         }
     }
 
@@ -172,7 +221,6 @@ class DetailViewModel(
         val wp = _uiState.value.currentWallpaper ?: return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isApplying = true)
-            // Use downloadUrl for full uncompressed master resolution wallpaper setting
             val result = WallpaperManagerHelper.setWallpaperDirect(context, wp.downloadUrl, target)
             _uiState.value = _uiState.value.copy(
                 isApplying = false,

@@ -2,8 +2,10 @@ package com.v0idspace.hyperwallpaper.data.api
 
 import com.google.gson.Gson
 import com.v0idspace.hyperwallpaper.data.model.CategoryData
+import com.v0idspace.hyperwallpaper.data.model.ProductDetail
 import com.v0idspace.hyperwallpaper.data.model.Wallpaper
 import com.v0idspace.hyperwallpaper.data.model.XiaomiApiResponse
+import com.v0idspace.hyperwallpaper.data.model.XiaomiProductDetailResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.ConnectionPool
@@ -35,7 +37,6 @@ class XiaomiApiClient {
                 null
             }
 
-            // Exponential backoff retry loop for transient network drops or CDN rate-limiting
             var tryCount = 0
             while ((response == null || !response.isSuccessful) && tryCount < 3) {
                 tryCount++
@@ -138,6 +139,57 @@ class XiaomiApiClient {
         executeAndParse(url, tag)
     }
 
+    suspend fun fetchProductDetail(uuid: String): ProductDetail? = withContext(Dispatchers.IO) {
+        try {
+            val url = "https://api.zhuti.xiaomi.com/app/v9/products/detail/$uuid"
+            val request = Request.Builder().url(url).build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                val body = response.body?.string() ?: return@withContext null
+                val parsed = gson.fromJson(body, XiaomiProductDetailResponse::class.java)
+                val ad = parsed.apiData ?: return@withContext null
+
+                val title = ad.name?.takeIf { it.isNotBlank() } ?: "Xiaomi HyperOS Wallpaper"
+                val designer = ad.designerName?.takeIf { it.isNotBlank() } ?: "Xiaomi Official"
+                val rawTags = ad.tags.orEmpty()
+                val parsedTags = rawTags.split(";").map { it.trim() }.filter { it.isNotBlank() }
+                val rawBytes = ad.fileSize ?: 0L
+                val count = ad.productCount ?: 0
+
+                val primaryTheme = parsedTags.firstOrNull() ?: "Mobile Art"
+                val secondaryThemes = if (parsedTags.size > 1) parsedTags.drop(1).take(3).joinToString(", ") else "minimalist styling"
+
+                val story = "Officially cataloged in the Xiaomi Global Theme Store, \"$title\" is an authentic wallpaper created by $designer" +
+                        (if (count > 0) " ($count wallpapers published in official store portfolio)." else ".") +
+                        " The aesthetic tone centers around $primaryTheme with accents of $secondaryThemes. " +
+                        "Tailored with a 20:9 portrait aspect ratio, dynamic contrast is engineered specifically for lockscreen clocks, Always-On-Display (AOD), and homescreen app grids."
+
+                val formattedSize = if (rawBytes > 1024 * 1024) {
+                    String.format("%.2f MB Master", rawBytes / (1024.0 * 1024.0))
+                } else if (rawBytes > 1024) {
+                    String.format("%.1f KB Master", rawBytes / 1024.0)
+                } else {
+                    "HQ Master"
+                }
+
+                ProductDetail(
+                    id = uuid,
+                    name = title,
+                    designerName = designer,
+                    designerIcon = ad.designerIcon.orEmpty(),
+                    designerMiId = ad.designerMiId.orEmpty(),
+                    productCount = count,
+                    tags = parsedTags,
+                    fileSizeBytes = rawBytes,
+                    formattedFileSize = formattedSize,
+                    editorialStory = story
+                )
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun executeAndParse(url: String, defaultCategory: String): List<Wallpaper> {
         return try {
             val request = Request.Builder().url(url).build()
@@ -191,7 +243,7 @@ class XiaomiApiClient {
                         tags = combinedTags,
                         category = defaultCategory,
                         downloadCount = p.downloadCount ?: 0L,
-                        fileSizeInKB = fileSize,
+                        fileSizeBytes = fileSize,
                         width = 1080,
                         height = 2400,
                         verifiedStudio = rawAuthor.contains("VCG", ignoreCase = true) ||

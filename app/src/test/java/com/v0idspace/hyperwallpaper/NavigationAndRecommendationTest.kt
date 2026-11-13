@@ -13,14 +13,12 @@ class NavigationAndRecommendationTest {
         val wpB = Wallpaper(id = "wp_B", title = "Nature Forest", author = "VCG", thumbnailUrl = "thumbB", previewUrl = "prevB", downloadUrl = "downB", hash = "hB")
         val catalogList = listOf(wpA, wpB)
 
-        // Depth 1: User is in Catalog
         val sessionDepth1 = "catalog_1"
         DetailNavigationState.saveSession(sessionDepth1, catalogList)
 
         assertEquals(2, DetailNavigationState.getSession(sessionDepth1)?.size)
         assertEquals("wp_A", DetailNavigationState.getSession(sessionDepth1)?.get(0)?.id)
 
-        // Depth 2: User clicks a recommendation from wp_A's similar grid
         val rec1 = Wallpaper(id = "rec_1", title = "Deep Lake Reflection", author = "ArtistX", thumbnailUrl = "thumbR1", previewUrl = "prevR1", downloadUrl = "downR1", hash = "hR1")
         val rec2 = Wallpaper(id = "rec_2", title = "Mountain Mist", author = "ArtistY", thumbnailUrl = "thumbR2", previewUrl = "prevR2", downloadUrl = "downR2", hash = "hR2")
         val recList = listOf(rec1, rec2)
@@ -28,14 +26,12 @@ class NavigationAndRecommendationTest {
         val sessionDepth2 = "rec_${rec1.id}_1001"
         DetailNavigationState.saveSession(sessionDepth2, recList)
 
-        // Verify Depth 2 gets its exact recommendation list and NEVER defaults to Catalog's wp_A
         val depth2List = DetailNavigationState.getSession(sessionDepth2)
         assertNotNull(depth2List)
         assertEquals(2, depth2List?.size)
         assertEquals("rec_1", depth2List?.get(0)?.id)
         assertEquals("rec_2", depth2List?.get(1)?.id)
 
-        // Depth 1 remains completely intact
         assertEquals("wp_A", DetailNavigationState.getSession(sessionDepth1)?.get(0)?.id)
         assertNotEquals(DetailNavigationState.getSession(sessionDepth1)?.get(0)?.id, depth2List?.get(0)?.id)
     }
@@ -54,7 +50,6 @@ class NavigationAndRecommendationTest {
             )
         }
 
-        // Simulate clicking item at index 7 with ID "wp_7"
         val clickedId = "wp_7"
         val passedIndex = 7
 
@@ -66,25 +61,70 @@ class NavigationAndRecommendationTest {
     }
 
     @Test
-    fun testSemanticRecommendationExclusion() {
+    fun testFileSizeFormattingFromBytes() {
+        // Xiaomi API returns 3,680,883 bytes for 3.51 MB
         val wp = Wallpaper(
-            id = "lake_101",
-            title = "Why is namtso lake regarded as a sacred lake",
+            id = "wp_bytes_test",
+            title = "Test Wallpaper",
             author = "VCG",
             thumbnailUrl = "thumb",
             previewUrl = "prev",
             downloadUrl = "down",
             hash = "h",
-            tags = listOf("Landscape", "Refreshing", "Pleasant", "ThemeMarket", "壁纸")
+            fileSizeBytes = 3680883L
         )
 
-        val noiseTokens = setOf("壁纸", "official", "Official", "ThemeMarket", "xiaomi", "Xiaomi", "WALLPAPER", "THEME")
-        val candidateTags = wp.tags.filter { !noiseTokens.contains(it) }
+        assertEquals("3.51 MB Master", wp.formattedFileSize)
+    }
 
-        assertTrue(candidateTags.contains("Landscape"))
-        assertTrue(candidateTags.contains("Refreshing"))
-        assertTrue(candidateTags.contains("Pleasant"))
-        assertFalse(candidateTags.contains("壁纸"))
-        assertFalse(candidateTags.contains("ThemeMarket"))
+    @Test
+    fun testAiWallpaperDetection() {
+        val wpAi1 = Wallpaper(
+            id = "ai_1",
+            title = "Ai anime cyberpunk portrait",
+            author = "Designer",
+            thumbnailUrl = "thumb",
+            previewUrl = "prev",
+            downloadUrl = "down",
+            hash = "h1",
+            tags = listOf("Anime", "Art")
+        )
+
+        val wpAi2 = Wallpaper(
+            id = "ai_2",
+            title = "Dreamy Landscape",
+            author = "Midjourney Studio",
+            thumbnailUrl = "thumb",
+            previewUrl = "prev",
+            downloadUrl = "down",
+            hash = "h2",
+            tags = listOf("Landscape", "AIGC壁纸")
+        )
+
+        val wpReal = Wallpaper(
+            id = "real_1",
+            title = "Alpine Mountain Sunlight",
+            author = "VCG",
+            thumbnailUrl = "thumb",
+            previewUrl = "prev",
+            downloadUrl = "down",
+            hash = "h3",
+            tags = listOf("Mountain", "Snow", "Nature")
+        )
+
+        assertTrue(wpAi1.isAiGenerated)
+        assertTrue(wpAi2.isAiGenerated)
+        assertFalse(wpReal.isAiGenerated)
+    }
+
+    @Test
+    fun testDeterministicWallpaperSeedOffset() {
+        val wp1 = Wallpaper(id = "wp_alpha_123", title = "W1", author = "A", thumbnailUrl = "t", previewUrl = "p", downloadUrl = "d", hash = "h1")
+        val wp2 = Wallpaper(id = "wp_beta_987", title = "W2", author = "A", thumbnailUrl = "t", previewUrl = "p", downloadUrl = "d", hash = "h2")
+
+        val seed1 = (wp1.id.hashCode() and 0x7FFFFFFF) % 25
+        val seed2 = (wp2.id.hashCode() and 0x7FFFFFFF) % 25
+
+        assertNotEquals(seed1, seed2)
     }
 }
