@@ -32,5 +32,6 @@ data class XiaomiProduct(
     @SerializedName("likeCount") val likeCount: Long? = 0,
     @SerializedName("tags") val tags: List<String>? = null,
     @SerializedName("metaTags") val metaTags: List<String>? = null,
-    @SerializedName("innerTags") val innerTags: List<String>? = null
+    @SerializedName("innerTags") val innerTags: List<String>? = null,
+    @SerializedName("fileSizeInKB") val fileSizeInKB: Long? = 0
 )

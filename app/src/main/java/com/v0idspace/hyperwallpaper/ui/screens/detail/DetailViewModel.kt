@@ -138,6 +138,27 @@ class DetailViewModel(
         }
     }
 
+    fun filterRelatedByTag(tag: String) {
+        val wp = _uiState.value.currentWallpaper ?: return
+        loadRelatedJob?.cancel()
+        loadRelatedJob = viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                relatedWallpapers = emptyList(),
+                isLoadingRelatedMore = true
+            )
+            try {
+                val results = wallpaperRepository.search(tag, 0, 18, "EEA")
+                    .filter { it.id != wp.id }
+                _uiState.value = _uiState.value.copy(
+                    relatedWallpapers = results,
+                    isLoadingRelatedMore = false
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isLoadingRelatedMore = false)
+            }
+        }
+    }
+
     fun toggleFavorite() {
         val wp = _uiState.value.currentWallpaper ?: return
         val newFav = favoritesRepository.toggleFavorite(wp)

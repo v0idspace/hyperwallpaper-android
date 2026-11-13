@@ -8,8 +8,10 @@ import coil.memory.MemoryCache
 import com.v0idspace.hyperwallpaper.data.repository.FavoritesRepository
 import com.v0idspace.hyperwallpaper.data.repository.WallpaperRepository
 import okhttp3.ConnectionPool
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
+import kotlin.math.pow
 
 class HyperWallpaperApp : Application(), ImageLoaderFactory {
 
@@ -30,30 +32,52 @@ class HyperWallpaperApp : Application(), ImageLoaderFactory {
         return ImageLoader.Builder(this)
             .okHttpClient {
                 OkHttpClient.Builder()
-                    .connectionPool(ConnectionPool(12, 5, TimeUnit.MINUTES))
+                    .connectionPool(ConnectionPool(32, 5, TimeUnit.MINUTES))
                     .connectTimeout(6, TimeUnit.SECONDS)
-                    .readTimeout(8, TimeUnit.SECONDS)
-                    .addInterceptor { chain ->
+                    .readTimeout(10, TimeUnit.SECONDS)
+                    .writeTimeout(6, TimeUnit.SECONDS)
+                    .addInterceptor(Interceptor { chain ->
                         val request = chain.request().newBuilder()
                             .header("User-Agent", "MiuiTheme/2.2.0 (Linux; U; Android 14; Mobile; en-US)")
+                            .header("Accept", "image/webp,image/*,*/*")
                             .build()
-                        chain.proceed(request)
-                    }
+
+                        var response = try {
+                            chain.proceed(request)
+                        } catch (e: Exception) {
+                            null
+                        }
+
+                        // Exponential backoff retry loop for high-speed CDN streaming
+                        var tryCount = 0
+                        while ((response == null || !response.isSuccessful) && tryCount < 3) {
+                            tryCount++
+                            try {
+                                val backoffMs = (150 * 2.0.pow(tryCount)).toLong()
+                                Thread.sleep(backoffMs)
+                                response?.close()
+                                response = chain.proceed(request)
+                            } catch (ignored: Exception) {
+                            }
+                        }
+
+                        response ?: chain.proceed(request)
+                    })
                     .build()
             }
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.30) // 30% memory cache
+                    .maxSizePercent(0.35) // 35% RAM cache for immediate swipe hits
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(350L * 1024 * 1024) // 350 MB disk cache
+                    .maxSizeBytes(500L * 1024 * 1024) // 500 MB persistent disk cache
                     .build()
             }
-            .respectCacheHeaders(false)
-            .crossfade(150)
+            .respectCacheHeaders(false) // Zero CDN revalidation latency
+            .crossfade(200)
             .build()
     }
 

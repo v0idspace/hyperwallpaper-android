@@ -19,10 +19,10 @@ class XiaomiApiClient {
     private val gson = Gson()
 
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectionPool(ConnectionPool(10, 5, TimeUnit.MINUTES))
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .writeTimeout(8, TimeUnit.SECONDS)
+        .connectionPool(ConnectionPool(24, 5, TimeUnit.MINUTES))
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
+        .writeTimeout(6, TimeUnit.SECONDS)
         .addInterceptor(Interceptor { chain ->
             val request = chain.request().newBuilder()
                 .header("User-Agent", "MiuiTheme/2.2.0 (Linux; U; Android 14; Mobile; en-US)")
@@ -35,12 +35,12 @@ class XiaomiApiClient {
                 null
             }
 
-            // Retry loop with exponential backoff for transient 502/network drops
+            // Exponential backoff retry loop for transient network drops or CDN rate-limiting
             var tryCount = 0
             while ((response == null || !response.isSuccessful) && tryCount < 3) {
                 tryCount++
                 try {
-                    val backoffMs = (250 * 2.0.pow(tryCount)).toLong()
+                    val backoffMs = (150 * 2.0.pow(tryCount)).toLong()
                     Thread.sleep(backoffMs)
                     response?.close()
                     response = chain.proceed(request)
@@ -66,14 +66,20 @@ class XiaomiApiClient {
         val isCn = region.equals("CN", ignoreCase = true)
         val subtags = if (isCn) cat.cnSubtags else cat.subtags
 
+        val isAll = subtag.isNullOrBlank() || 
+                    subtag.startsWith("All", ignoreCase = true) || 
+                    subtag.equals("全部", ignoreCase = true) || 
+                    subtag.startsWith("全部")
+
         val activeTag: String
         val activeOffset: Int
 
-        if (!subtag.isNullOrBlank() && !subtag.startsWith("All", ignoreCase = true)) {
-            activeTag = subtag
+        if (!isAll) {
+            val rawTag = subtag!!
+            activeTag = if (isCn) mapToChineseTag(rawTag) else rawTag
             activeOffset = offset
         } else {
-            // Apply taxonomy chaining to bypass Lucene 840 item ceiling
+            // Apply taxonomy chaining across verified subtags to bypass Lucene 840 item ceiling
             val tagIndex = (offset / 840) % subtags.size
             activeTag = subtags[tagIndex]
             activeOffset = offset % 840
@@ -92,7 +98,11 @@ class XiaomiApiClient {
         count: Int = 12,
         region: String = "EEA"
     ): List<Wallpaper> = withContext(Dispatchers.IO) {
-        val encodedQuery = URLEncoder.encode(query.trim(), "UTF-8")
+        val trimmed = query.trim()
+        val isCn = region.equals("CN", ignoreCase = true)
+        val effectiveQuery = if (isCn) mapToChineseTag(trimmed) else trimmed
+
+        val encodedQuery = URLEncoder.encode(effectiveQuery, "UTF-8")
         val url = "https://api.zhuti.xiaomi.com/app/v9/uipages/search/tag" +
                 "?cardCount=$count&type=WALLPAPER&tag=$encodedQuery&cardStart=$offset&region=$region"
 
@@ -118,7 +128,10 @@ class XiaomiApiClient {
         count: Int = 12,
         region: String = "EEA"
     ): List<Wallpaper> = withContext(Dispatchers.IO) {
-        val encodedTag = URLEncoder.encode(tag.trim(), "UTF-8")
+        val isCn = region.equals("CN", ignoreCase = true)
+        val effectiveTag = if (isCn) mapToChineseTag(tag.trim()) else tag.trim()
+
+        val encodedTag = URLEncoder.encode(effectiveTag, "UTF-8")
         val url = "https://api.zhuti.xiaomi.com/app/v9/uipages/search/tag" +
                 "?cardCount=$count&type=WALLPAPER&tag=$encodedTag&cardStart=$offset&region=$region"
 
@@ -142,9 +155,8 @@ class XiaomiApiClient {
 
                     val hash = extractHash(origUrl.ifBlank { imgUrl })
                     
-                    // True wallpaper title and author extraction
                     val rawTitle = p.name?.takeIf { it.isNotBlank() } ?: p.title?.takeIf { it.isNotBlank() } ?: "HyperOS Wallpaper"
-                    val rawAuthor = p.authorName?.takeIf { it.isNotBlank() } ?: p.author?.takeIf { it.isNotBlank() } ?: p.designer?.takeIf { it.isNotBlank() } ?: "Xiaomi Creator"
+                    val rawAuthor = p.authorName?.takeIf { it.isNotBlank() } ?: p.author?.takeIf { it.isNotBlank() } ?: p.designer?.takeIf { it.isNotBlank() } ?: "Xiaomi Official"
                     val wallpaperId = p.uuid?.takeIf { it.isNotBlank() } ?: p.productUuid?.takeIf { it.isNotBlank() } ?: p.id ?: hash.ifBlank { java.util.UUID.randomUUID().toString() }
 
                     val thumb = if (hash.isNotBlank()) {
@@ -166,6 +178,8 @@ class XiaomiApiClient {
                     p.tags?.forEach { if (it.isNotBlank() && !combinedTags.contains(it)) combinedTags.add(it) }
                     if (combinedTags.isEmpty()) combinedTags.add(defaultCategory)
 
+                    val fileSize = p.fileSizeInKB ?: 0L
+
                     Wallpaper(
                         id = wallpaperId,
                         title = rawTitle,
@@ -177,6 +191,7 @@ class XiaomiApiClient {
                         tags = combinedTags,
                         category = defaultCategory,
                         downloadCount = p.downloadCount ?: 0L,
+                        fileSizeInKB = fileSize,
                         width = 1080,
                         height = 2400,
                         verifiedStudio = rawAuthor.contains("VCG", ignoreCase = true) ||
@@ -196,6 +211,24 @@ class XiaomiApiClient {
             "/ThemeMarket/" in url -> url.substringAfter("/ThemeMarket/").substringBefore("?")
             "/" in url -> url.substringAfterLast("/").substringBefore("?")
             else -> ""
+        }
+    }
+
+    private fun mapToChineseTag(englishTag: String): String {
+        val lower = englishTag.lowercase().trim()
+        return when {
+            "nature" in lower || "forest" in lower || "mountain" in lower -> "自然"
+            "landscape" in lower || "scenery" in lower || "sunset" in lower -> "风景"
+            "dark" in lower || "amoled" in lower || "black" in lower || "night" in lower -> "暗黑"
+            "space" in lower || "galaxy" in lower || "star" in lower || "cosmic" in lower -> "星空"
+            "minimal" in lower || "simple" in lower || "clean" in lower -> "极简"
+            "city" in lower || "urban" in lower || "architecture" in lower -> "城市"
+            "anime" in lower || "art" in lower || "illustration" in lower || "drawing" in lower -> "动漫"
+            "abstract" in lower || "3d" in lower || "fluid" in lower || "gradient" in lower -> "抽象"
+            "cyberpunk" in lower || "tech" in lower || "future" in lower -> "机械"
+            "car" in lower || "auto" in lower || "vehicle" in lower -> "汽车"
+            "ocean" in lower || "sea" in lower || "water" in lower || "beach" in lower -> "海洋"
+            else -> englishTag
         }
     }
 }

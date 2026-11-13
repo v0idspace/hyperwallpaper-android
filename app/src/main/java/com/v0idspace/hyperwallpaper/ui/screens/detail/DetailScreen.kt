@@ -13,7 +13,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -49,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.imageLoader
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import com.v0idspace.hyperwallpaper.data.model.Wallpaper
@@ -113,6 +113,22 @@ fun DetailScreen(
             }
     }
 
+    // High-Speed Prefetching: Prefetch adjacent 1080p previews into cache for instant swipes
+    LaunchedEffect(pagerState.currentPage, swipeList) {
+        val loader = context.imageLoader
+        listOf(pagerState.currentPage - 1, pagerState.currentPage + 1).forEach { p ->
+            val adjacent = swipeList.getOrNull(p)
+            if (adjacent != null) {
+                val req = ImageRequest.Builder(context)
+                    .data(adjacent.previewUrl)
+                    .memoryCachePolicy(CachePolicy.ENABLED)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .build()
+                loader.enqueue(req)
+            }
+        }
+    }
+
     val currentWp = state.currentWallpaper ?: swipeList.getOrNull(pagerState.currentPage)
 
     if (showSetDialog && currentWp != null) {
@@ -133,11 +149,11 @@ fun DetailScreen(
         )
     }
 
-    // Modal Bottom Sheet for Details & Recommendations
+    // Modal Bottom Sheet for Details & Recommendations - Expands seamlessly all the way to top!
     if (showDetailsSheet && currentWp != null) {
         val sheetListState = rememberLazyGridState()
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
 
-        // Infinite recommendations scroll listener
         LaunchedEffect(sheetListState) {
             snapshotFlow { sheetListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
                 .collect { lastIdx ->
@@ -149,20 +165,21 @@ fun DetailScreen(
 
         ModalBottomSheet(
             onDismissRequest = { showDetailsSheet = false },
+            sheetState = sheetState,
             containerColor = DarkSurface,
             dragHandle = {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 12.dp),
+                        .padding(top = 10.dp, bottom = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
                         modifier = Modifier
-                            .width(40.dp)
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(Color.White.copy(alpha = 0.35f))
+                            .width(44.dp)
+                            .height(5.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(Color.White.copy(alpha = 0.4f))
                     )
                 }
             }
@@ -170,6 +187,7 @@ fun DetailScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .fillMaxHeight(0.94f) // Expandable to top of screen
                     .padding(horizontal = 20.dp)
             ) {
                 // Title & Author Header
@@ -213,13 +231,22 @@ fun DetailScreen(
                         }
                     }
 
+                    // Resolution & Master File Size Badge
+                    val sizeFormatted = if (currentWp.fileSizeInKB > 1024) {
+                        String.format("%.1f MB Master", currentWp.fileSizeInKB / 1024.0)
+                    } else if (currentWp.fileSizeInKB > 0) {
+                        "${currentWp.fileSizeInKB} KB Master"
+                    } else {
+                        "1080p Master"
+                    }
+
                     Box(
                         modifier = Modifier
                             .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Text(
-                            text = "1080p Master",
+                            text = sizeFormatted,
                             color = Color.White,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
@@ -227,63 +254,80 @@ fun DetailScreen(
                     }
                 }
 
-                // Tags Pill Row
+                // Interactive Clickable Tags Pill Row
                 if (currentWp.tags.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         currentWp.tags.take(5).forEach { tag ->
                             Box(
                                 modifier = Modifier
-                                    .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.White.copy(alpha = 0.1f))
+                                    .clickable {
+                                        // Filter recommendations directly by this tag
+                                        viewModel.filterRelatedByTag(tag)
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
                             ) {
                                 Text(
                                     text = "#$tag",
-                                    color = Color(0xFFD1D5DB),
-                                    fontSize = 11.sp
+                                    color = Color(0xFFE5E7EB),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
                                 )
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
                 // Similar Wallpapers Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = XiaomiOrange,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = XiaomiOrange,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Similar Wallpapers",
+                            color = Color.White,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
                     Text(
-                        text = "Similar Wallpapers",
-                        color = Color.White,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold
+                        text = "${state.relatedWallpapers.size} curated",
+                        color = Color(0xFF9CA3AF),
+                        fontSize = 12.sp
                     )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Recommendations Grid inside Bottom Sheet
+                // Recommendations Grid inside Bottom Sheet - Takes full vertical space!
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     state = sheetListState,
-                    contentPadding = PaddingValues(bottom = 32.dp),
+                    contentPadding = PaddingValues(
+                        bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp
+                    ),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 420.dp)
+                        .weight(1f) // Takes full remaining height for smooth dragging to top!
                 ) {
                     itemsIndexed(state.relatedWallpapers, key = { _, it -> it.id }) { relIdx, relWp ->
                         WallpaperCard(
@@ -361,14 +405,14 @@ fun DetailScreen(
                             }
                             .transformable(state = transformState)
                     ) {
-                        // Progressive Loading: Instant cached thumbnail placeholder -> Crisp 1080p preview
+                        // Progressive Loading: Instant cached thumbnail placeholder -> High-Definition 1080p preview
                         AsyncImage(
                             model = ImageRequest.Builder(context)
                                 .data(wp.previewUrl) // High-definition 1080p preview!
                                 .placeholderMemoryCacheKey(wp.thumbnailUrl)
                                 .memoryCachePolicy(CachePolicy.ENABLED)
                                 .diskCachePolicy(CachePolicy.ENABLED)
-                                .crossfade(300)
+                                .crossfade(200)
                                 .build(),
                             contentDescription = wp.title,
                             contentScale = ContentScale.Crop,

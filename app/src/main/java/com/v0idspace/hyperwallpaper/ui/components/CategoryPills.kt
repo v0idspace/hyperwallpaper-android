@@ -76,33 +76,34 @@ fun SubtagChips(
         contentPadding = PaddingValues(horizontal = 16.dp)
     ) {
         items(subtags) { tag ->
-            val isSelected = (selectedSubtag == null && tag.startsWith("All", ignoreCase = true)) ||
-                    (selectedSubtag == tag)
+            val isAllTag = tag.startsWith("All", ignoreCase = true) || tag == "全部" || tag.startsWith("全部")
+            val isSelected = (selectedSubtag == null && isAllTag) || (selectedSubtag == tag)
+
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(16.dp))
                     .background(
-                        if (isSelected) Color.White.copy(alpha = 0.18f) else Color.Transparent
+                        if (isSelected) Color.White.copy(alpha = 0.22f) else Color.Transparent
                     )
                     .border(
                         0.8.dp,
-                        if (isSelected) Color.White.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.12f),
+                        if (isSelected) XiaomiOrange else Color.White.copy(alpha = 0.15f),
                         RoundedCornerShape(16.dp)
                     )
                     .clickable {
-                        if (tag.startsWith("All", ignoreCase = true)) {
+                        if (isAllTag) {
                             onSubtagSelected(null)
                         } else {
                             onSubtagSelected(tag)
                         }
                     }
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (tag.startsWith("All")) tag else "#$tag",
+                    text = tag,
                     color = if (isSelected) Color.White else Color(0xFF9CA3AF),
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                 )
             }

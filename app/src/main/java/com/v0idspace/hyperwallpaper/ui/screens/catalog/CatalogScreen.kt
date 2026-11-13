@@ -1,6 +1,8 @@
 package com.v0idspace.hyperwallpaper.ui.screens.catalog
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -13,7 +15,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.v0idspace.hyperwallpaper.data.model.Wallpaper
@@ -21,6 +25,7 @@ import com.v0idspace.hyperwallpaper.ui.components.CategoryPills
 import com.v0idspace.hyperwallpaper.ui.components.SubtagChips
 import com.v0idspace.hyperwallpaper.ui.components.WallpaperCard
 import com.v0idspace.hyperwallpaper.ui.theme.DarkBackground
+import com.v0idspace.hyperwallpaper.ui.theme.DarkSurface
 import com.v0idspace.hyperwallpaper.ui.theme.XiaomiOrange
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,48 +70,111 @@ fun CatalogScreen(
                         Text(
                             text = "HyperWallpaper",
                             style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            // Shuffle / Discover Random toggle
-                            IconButton(onClick = { viewModel.toggleShuffle() }) {
-                                Icon(
-                                    imageVector = Icons.Default.Shuffle,
-                                    contentDescription = "Discover Random Pool",
-                                    tint = if (state.isShuffleEnabled) XiaomiOrange else Color.White
-                                )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            // Region Selector Pill with flag & highlight
+                            val regionLabel = when (state.currentRegion) {
+                                "CN" -> "🇨🇳 CN"
+                                "GLOBAL" -> "🌐 GLOBAL"
+                                else -> "🇪🇺 EEA"
                             }
 
-                            // Region Selector
                             Box {
-                                IconButton(onClick = { regionMenuOpen = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Public,
-                                        contentDescription = "Region: ${state.currentRegion}",
-                                        tint = Color.White
-                                    )
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Color.White.copy(alpha = 0.12f),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .border(0.8.dp, XiaomiOrange.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                                        .clickable { regionMenuOpen = true }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = regionLabel,
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDropDown,
+                                            contentDescription = "Select Region",
+                                            tint = XiaomiOrange,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                 }
+
                                 DropdownMenu(
                                     expanded = regionMenuOpen,
                                     onDismissRequest = { regionMenuOpen = false }
                                 ) {
+                                    // EEA
+                                    val isEea = state.currentRegion.equals("EEA", ignoreCase = true)
                                     DropdownMenuItem(
-                                        text = { Text("EEA (Europe / HyperOS Global)") },
+                                        text = {
+                                            Text(
+                                                text = "🇪🇺 EEA (Europe / Global)",
+                                                color = if (isEea) XiaomiOrange else Color.White,
+                                                fontWeight = if (isEea) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            if (isEea) {
+                                                Icon(Icons.Default.Check, contentDescription = "Active", tint = XiaomiOrange)
+                                            }
+                                        },
                                         onClick = {
                                             viewModel.setRegion("EEA")
                                             regionMenuOpen = false
                                         }
                                     )
+
+                                    // GLOBAL
+                                    val isGlobal = state.currentRegion.equals("GLOBAL", ignoreCase = true)
                                     DropdownMenuItem(
-                                        text = { Text("GLOBAL (International)") },
+                                        text = {
+                                            Text(
+                                                text = "🌐 GLOBAL (International)",
+                                                color = if (isGlobal) XiaomiOrange else Color.White,
+                                                fontWeight = if (isGlobal) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            if (isGlobal) {
+                                                Icon(Icons.Default.Check, contentDescription = "Active", tint = XiaomiOrange)
+                                            }
+                                        },
                                         onClick = {
                                             viewModel.setRegion("GLOBAL")
                                             regionMenuOpen = false
                                         }
                                     )
+
+                                    // CN
+                                    val isCn = state.currentRegion.equals("CN", ignoreCase = true)
                                     DropdownMenuItem(
-                                        text = { Text("CN (China Mainland)") },
+                                        text = {
+                                            Text(
+                                                text = "🇨🇳 CN (China Mainland)",
+                                                color = if (isCn) XiaomiOrange else Color.White,
+                                                fontWeight = if (isCn) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            if (isCn) {
+                                                Icon(Icons.Default.Check, contentDescription = "Active", tint = XiaomiOrange)
+                                            }
+                                        },
                                         onClick = {
                                             viewModel.setRegion("CN")
                                             regionMenuOpen = false
@@ -115,12 +183,12 @@ fun CatalogScreen(
                                 }
                             }
 
-                            // Density Switcher
-                            IconButton(onClick = { viewModel.toggleGridDensity() }) {
+                            // Shuffle / Discover Random toggle
+                            IconButton(onClick = { viewModel.toggleShuffle() }) {
                                 Icon(
-                                    imageVector = Icons.Default.GridView,
-                                    contentDescription = "Toggle Grid",
-                                    tint = if (state.isDenseGrid) XiaomiOrange else Color.White
+                                    imageVector = Icons.Default.Shuffle,
+                                    contentDescription = "Discover Random Pool",
+                                    tint = if (state.isShuffleEnabled) XiaomiOrange else Color.White
                                 )
                             }
 
@@ -147,7 +215,7 @@ fun CatalogScreen(
                         OutlinedTextField(
                             value = state.searchQuery,
                             onValueChange = { viewModel.search(it) },
-                            placeholder = { Text("Search catalog...", color = Color.Gray) },
+                            placeholder = { Text("Search Xiaomi catalog...", color = Color.Gray) },
                             singleLine = true,
                             shape = RoundedCornerShape(20.dp),
                             trailingIcon = {
@@ -178,14 +246,16 @@ fun CatalogScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    val activeSubtags = if (state.currentRegion.equals("CN", ignoreCase = true)) {
+                    val isCn = state.currentRegion.equals("CN", ignoreCase = true)
+                    val activeSubtags = if (isCn) {
                         state.selectedCategory.cnSubtags
                     } else {
                         state.selectedCategory.subtags
                     }
 
+                    val allLabel = if (isCn) "全部" else "All"
                     SubtagChips(
-                        subtags = listOf(if (state.currentRegion.equals("CN", ignoreCase = true)) "全部" else "All") + activeSubtags,
+                        subtags = listOf(allLabel) + activeSubtags,
                         selectedSubtag = state.selectedSubtag,
                         onSubtagSelected = { viewModel.selectSubtag(it) }
                     )
@@ -221,23 +291,24 @@ fun CatalogScreen(
                     }
                 }
             } else {
+                // Fixed 3-column Grid for fast, immersive browsing
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(if (state.isDenseGrid) 3 else 2),
+                    columns = GridCells.Fixed(3),
                     state = gridState,
                     contentPadding = PaddingValues(
-                        start = 12.dp,
-                        end = 12.dp,
-                        top = 8.dp,
+                        start = 8.dp,
+                        end = 8.dp,
+                        top = 6.dp,
                         bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 16.dp
                     ),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     itemsIndexed(state.wallpapers, key = { _, item -> item.id }) { index, wallpaper ->
                         WallpaperCard(
                             wallpaper = wallpaper,
-                            isDense = state.isDenseGrid,
+                            isDense = true,
                             onClick = { onWallpaperClick(wallpaper, index) }
                         )
                     }

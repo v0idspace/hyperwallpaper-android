@@ -11,6 +11,7 @@ data class Wallpaper(
     val tags: List<String> = emptyList(),
     val category: String = "Featured",
     val downloadCount: Long = 0,
+    val fileSizeInKB: Long = 0,
     val width: Int = 1080,
     val height: Int = 2400,
     val verifiedStudio: Boolean = true
@@ -35,9 +36,9 @@ object CategoryData {
             icon = "🔥",
             desc = "Hand-picked flagship wallpapers from MIUI EU & HyperOS editions",
             primaryTag = "Nature",
-            subtags = listOf("Nature", "Scenery", "Sky", "Landscape"),
+            subtags = listOf("Nature", "Scenery", "Sky", "Landscape", "Mountain"),
             cnTag = "自然",
-            cnSubtags = listOf("自然", "风景", "天空", "风景自然")
+            cnSubtags = listOf("自然", "风景", "天空", "风景自然", "雪山")
         ),
         Category(
             id = "AMOLED",
@@ -47,7 +48,7 @@ object CategoryData {
             primaryTag = "Dark",
             subtags = listOf("Dark", "Black", "Night", "Neon", "OLED"),
             cnTag = "暗黑",
-            cnSubtags = listOf("暗黑", "黑色", "纯黑", "夜景", "发光")
+            cnSubtags = listOf("暗黑", "黑色", "暗色", "夜景", "发光", "黑金")
         ),
         Category(
             id = "Nature",
@@ -57,7 +58,7 @@ object CategoryData {
             primaryTag = "Nature",
             subtags = listOf("Nature", "Scenery", "Forest", "Mountain", "Sky"),
             cnTag = "自然",
-            cnSubtags = listOf("自然", "森林", "山脉", "湖泊", "雪山")
+            cnSubtags = listOf("自然", "森林", "雪山", "湖泊", "风景自然")
         ),
         Category(
             id = "Landscape",
@@ -65,9 +66,9 @@ object CategoryData {
             icon = "🌄",
             desc = "Sunrises, horizons, lakes, deserts and mountain ranges",
             primaryTag = "Landscape",
-            subtags = listOf("Landscape", "Scenery", "Horizon", "Desert"),
+            subtags = listOf("Landscape", "Scenery", "Horizon", "Desert", "Sunset"),
             cnTag = "风景",
-            cnSubtags = listOf("风景", "日出", "湖泊", "沙漠", "风光")
+            cnSubtags = listOf("风景", "日落", "晚霞", "湖泊", "风光")
         ),
         Category(
             id = "Minimal",
@@ -101,63 +102,53 @@ object CategoryData {
         ),
         Category(
             id = "Anime",
-            name = "Anime & Art",
+            name = "Anime & Illustration",
             icon = "🎨",
-            desc = "Japanese anime, digital illustrations and concept art",
+            desc = "Anime artistry, Japanese aesthetics, character concepts and paintings",
             primaryTag = "Anime",
-            subtags = listOf("Anime", "Art", "Drawing"),
+            subtags = listOf("Anime", "Art", "Illustration", "Drawing"),
             cnTag = "动漫",
-            cnSubtags = listOf("动漫", "二次元", "手绘", "插画", "人物")
-        ),
-        Category(
-            id = "Car",
-            name = "Supercars",
-            icon = "🏎️",
-            desc = "Sports cars, hypercars and automotive design",
-            primaryTag = "Car",
-            subtags = listOf("Car", "Vehicle", "Speed"),
-            cnTag = "汽车",
-            cnSubtags = listOf("汽车", "跑车", "机车", "赛车", "超跑")
-        ),
-        Category(
-            id = "Animals",
-            name = "Wildlife & Pets",
-            icon = "🐾",
-            desc = "Wildlife photography, cats, dogs and majestic animals",
-            primaryTag = "Animal",
-            subtags = listOf("Animal", "Cat", "Dog", "Wildlife"),
-            cnTag = "动物",
-            cnSubtags = listOf("动物", "猫", "狗", "萌宠", "野生动物")
-        ),
-        Category(
-            id = "Flowers",
-            name = "Flowers & Flora",
-            icon = "🌸",
-            desc = "Floral aesthetics, botanical blooms and macro flora",
-            primaryTag = "Flower",
-            subtags = listOf("Flower", "Floral", "Bloom"),
-            cnTag = "植物",
-            cnSubtags = listOf("植物", "花卉", "花朵", "绿植", "樱花")
-        ),
-        Category(
-            id = "Ocean",
-            name = "Ocean & Waves",
-            icon = "🌊",
-            desc = "Azure waters, coral reefs, coastlines and waves",
-            primaryTag = "Ocean",
-            subtags = listOf("Ocean", "Sea", "Water", "Beach"),
-            cnTag = "海洋",
-            cnSubtags = listOf("海洋", "海浪", "沙滩", "水下", "岛屿")
+            cnSubtags = listOf("动漫", "插画", "萌系", "二次元", "治愈")
         ),
         Category(
             id = "Abstract",
             name = "Abstract & 3D",
             icon = "🔮",
-            desc = "3D fluid renders, chromatic shapes and modern art",
-            primaryTag = "Art",
-            subtags = listOf("Art", "Abstract", "Color"),
-            cnTag = "插画",
-            cnSubtags = listOf("插画", "立体", "质感", "流动", "炫彩")
+            desc = "3D geometric renders, fluid dynamics, gradients and glassmorphism",
+            primaryTag = "Abstract",
+            subtags = listOf("Abstract", "3D", "Gradient", "Render"),
+            cnTag = "抽象",
+            cnSubtags = listOf("抽象", "光影", "炫彩", "流体", "立体")
+        ),
+        Category(
+            id = "Cyberpunk",
+            name = "Cyberpunk & Tech",
+            icon = "⚡",
+            desc = "Futuristic cityscapes, glowing wires, glitch art and mechanical tech",
+            primaryTag = "Cyberpunk",
+            subtags = listOf("Cyberpunk", "Tech", "Future", "Neon"),
+            cnTag = "机械",
+            cnSubtags = listOf("机械", "赛博朋克", "未来", "科技", "霓虹")
+        ),
+        Category(
+            id = "Cars",
+            name = "Cars & Vehicles",
+            icon = "🏎️",
+            desc = "Hypercars, classic vintage motors, motorcycles and aviation",
+            primaryTag = "Car",
+            subtags = listOf("Car", "Supercar", "Auto", "Vehicle"),
+            cnTag = "汽车",
+            cnSubtags = listOf("汽车", "跑车", "机车", "超跑")
+        ),
+        Category(
+            id = "Ocean",
+            name = "Ocean & Sea",
+            icon = "🌊",
+            desc = "Azure waters, crashing waves, coral reefs and oceanic horizons",
+            primaryTag = "Ocean",
+            subtags = listOf("Ocean", "Sea", "Water", "Beach", "Wave"),
+            cnTag = "海洋",
+            cnSubtags = listOf("海洋", "大海", "沙滩", "浪花")
         )
     )
 }

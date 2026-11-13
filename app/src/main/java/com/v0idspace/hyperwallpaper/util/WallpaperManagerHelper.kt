@@ -10,10 +10,16 @@ import android.os.Build
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.ConnectionPool
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.TimeUnit
+import kotlin.math.pow
 
 enum class WallpaperTarget {
     HOME,
@@ -23,7 +29,37 @@ enum class WallpaperTarget {
 
 object WallpaperManagerHelper {
 
-    private val httpClient = OkHttpClient()
+    private val httpClient = OkHttpClient.Builder()
+        .connectionPool(ConnectionPool(10, 5, TimeUnit.MINUTES))
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .addInterceptor(Interceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("User-Agent", "MiuiTheme/2.2.0 (Linux; U; Android 14; Mobile; en-US)")
+                .header("Accept", "*/*")
+                .build()
+
+            var response = try {
+                chain.proceed(request)
+            } catch (e: Exception) {
+                null
+            }
+
+            var tryCount = 0
+            while ((response == null || !response.isSuccessful) && tryCount < 3) {
+                tryCount++
+                try {
+                    val backoffMs = (200 * 2.0.pow(tryCount)).toLong()
+                    Thread.sleep(backoffMs)
+                    response?.close()
+                    response = chain.proceed(request)
+                } catch (ignored: Exception) {
+                }
+            }
+
+            response ?: chain.proceed(request)
+        })
+        .build()
 
     suspend fun setWallpaperDirect(
         context: Context,
@@ -40,7 +76,7 @@ object WallpaperManagerHelper {
             val inputStream = response.body?.byteStream()
                 ?: return@withContext Result.failure(Exception("Empty image body"))
 
-            val bitmap = BitmapFactory.decodeStream(inputStream)
+            val bitmap = BitmapFactory.decodeStream(BufferedInputStream(inputStream, 65536))
                 ?: return@withContext Result.failure(Exception("Failed to decode image bitmap"))
 
             val wallpaperManager = WallpaperManager.getInstance(context)
@@ -74,8 +110,9 @@ object WallpaperManagerHelper {
 
             val cacheFile = File(context.cacheDir, "crop_preview_${System.currentTimeMillis()}.jpg")
             response.body?.byteStream()?.use { input ->
-                FileOutputStream(cacheFile).use { output ->
-                    input.copyTo(output)
+                BufferedOutputStream(FileOutputStream(cacheFile), 65536).use { output ->
+                    input.copyTo(output, bufferSize = 65536)
+                    output.flush()
                 }
             }
 

@@ -61,7 +61,10 @@ class CatalogViewModel(
 
     fun setRegion(region: String) {
         if (_uiState.value.currentRegion == region) return
-        _uiState.value = _uiState.value.copy(currentRegion = region)
+        _uiState.value = _uiState.value.copy(
+            currentRegion = region,
+            selectedSubtag = null
+        )
         loadWallpapers(reset = true)
     }
 
