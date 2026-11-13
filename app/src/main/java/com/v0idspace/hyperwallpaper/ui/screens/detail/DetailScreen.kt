@@ -4,24 +4,32 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
@@ -29,11 +37,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -43,10 +55,11 @@ import com.v0idspace.hyperwallpaper.data.model.Wallpaper
 import com.v0idspace.hyperwallpaper.ui.components.SetWallpaperDialog
 import com.v0idspace.hyperwallpaper.ui.components.WallpaperCard
 import com.v0idspace.hyperwallpaper.ui.theme.DarkBackground
+import com.v0idspace.hyperwallpaper.ui.theme.DarkSurface
 import com.v0idspace.hyperwallpaper.ui.theme.XiaomiOrange
 import com.v0idspace.hyperwallpaper.util.DetailNavigationState
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun DetailScreen(
     sessionId: String,
@@ -58,14 +71,22 @@ fun DetailScreen(
     onOpenRelated: (String, Wallpaper, Int) -> Unit
 ) {
     val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val screenHeight = configuration.screenHeightDp.dp
     val state by viewModel.uiState.collectAsState()
-    val listState = rememberLazyListState()
     var showSetDialog by remember { mutableStateOf(false) }
+    var showDetailsSheet by remember { mutableStateOf(false) }
+
+    // Synchronously resolve session list to prevent initial 0-page race conditions
+    val sessionList = remember(sessionId) {
+        DetailNavigationState.getSession(sessionId).orEmpty()
+    }
+
+    val targetInitialIndex = remember(sessionId, initialWallpaperId, initialIndex) {
+        val found = sessionList.indexOfFirst { it.id == initialWallpaperId }
+        if (found >= 0) found else initialIndex.coerceIn(0, (sessionList.size - 1).coerceAtLeast(0))
+    }
 
     LaunchedEffect(sessionId, initialWallpaperId) {
-        viewModel.initSession(sessionId, initialWallpaperId, initialIndex)
+        viewModel.initSession(sessionId, initialWallpaperId, targetInitialIndex)
     }
 
     LaunchedEffect(state.message) {
@@ -75,30 +96,24 @@ fun DetailScreen(
         }
     }
 
-    val swipeList = state.swipeableList
+    val swipeList = if (state.swipeableList.isNotEmpty()) state.swipeableList else sessionList
     val pageCount = if (swipeList.isNotEmpty()) swipeList.size else 1
-    val startPage = if (swipeList.isNotEmpty()) initialIndex.coerceIn(0, swipeList.size - 1) else 0
-    val pagerState = rememberPagerState(initialPage = startPage) { pageCount }
+    val safeStartPage = if (swipeList.isNotEmpty()) targetInitialIndex.coerceIn(0, swipeList.size - 1) else 0
 
-    // Sync HorizontalPager page changes with ViewModel
-    LaunchedEffect(pagerState.currentPage, swipeList) {
-        if (swipeList.isNotEmpty() && pagerState.currentPage < swipeList.size) {
-            viewModel.onPageChanged(pagerState.currentPage)
-        }
-    }
+    // Key pagerState uniquely to this session so it never defaults to 0
+    val pagerState = rememberPagerState(initialPage = safeStartPage) { pageCount }
 
-    // Infinite scroll listener for 2-column similar wallpapers grid
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
-            .collect { lastIndex ->
-                val chunkedCount = (state.relatedWallpapers.size + 1) / 2
-                if (lastIndex != null && lastIndex >= chunkedCount - 2 && state.relatedWallpapers.isNotEmpty()) {
-                    viewModel.loadMoreRelated()
+    // Sync only when page has settled to avoid transient clobbering
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }
+            .collect { settledPage ->
+                if (swipeList.isNotEmpty() && settledPage < swipeList.size) {
+                    viewModel.onPageChanged(settledPage)
                 }
             }
     }
 
-    val currentWp = state.currentWallpaper
+    val currentWp = state.currentWallpaper ?: swipeList.getOrNull(pagerState.currentPage)
 
     if (showSetDialog && currentWp != null) {
         SetWallpaperDialog(
@@ -118,143 +133,307 @@ fun DetailScreen(
         )
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DarkBackground)
-    ) {
-        if (currentWp == null) {
-            CircularProgressIndicator(
-                color = XiaomiOrange,
-                modifier = Modifier.align(Alignment.Center)
-            )
-        } else {
-            // Vertically scrollable page: Hero Swipeable Wallpaper -> Metadata & Actions -> 2-Column Similar Wallpapers Grid
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp
-                )
-            ) {
-                // Section 1: Hero Swipable Horizontal Pager (Swipes left-to-right between wallpapers)
-                item {
+    // Modal Bottom Sheet for Details & Recommendations
+    if (showDetailsSheet && currentWp != null) {
+        val sheetListState = rememberLazyGridState()
+
+        // Infinite recommendations scroll listener
+        LaunchedEffect(sheetListState) {
+            snapshotFlow { sheetListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+                .collect { lastIdx ->
+                    if (lastIdx != null && lastIdx >= state.relatedWallpapers.size - 4 && state.relatedWallpapers.isNotEmpty()) {
+                        viewModel.loadMoreRelated()
+                    }
+                }
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = { showDetailsSheet = false },
+            containerColor = DarkSurface,
+            dragHandle = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(screenHeight)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                viewModel.toggleUiVisibility()
+                            .width(40.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color.White.copy(alpha = 0.35f))
+                    )
+                }
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+            ) {
+                // Title & Author Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = currentWp.title,
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable {
+                                showDetailsSheet = false
+                                onOpenAuthor(currentWp.author)
                             }
-                    ) {
-                        HorizontalPager(
-                            state = pagerState,
-                            modifier = Modifier.fillMaxSize()
-                        ) { page ->
-                            val wp = swipeList.getOrNull(page) ?: currentWp
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                // Fast Image Loading: Use lightweight thumbnail directly from cache for 0ms lag!
-                                AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(wp.thumbnailUrl)
-                                        .diskCachePolicy(CachePolicy.ENABLED)
-                                        .memoryCachePolicy(CachePolicy.ENABLED)
-                                        .crossfade(false)
-                                        .build(),
-                                    contentDescription = wp.title,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
+                        ) {
+                            Text(
+                                text = "By ${currentWp.author}",
+                                color = XiaomiOrange,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            if (currentWp.verifiedStudio) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Default.Verified,
+                                    contentDescription = "Verified Studio",
+                                    tint = XiaomiOrange,
+                                    modifier = Modifier.size(15.dp)
                                 )
                             }
                         }
+                    }
 
-                        // Scroll Down Cue (Only visible when UI is toggled on)
-                        AnimatedVisibility(
-                            visible = state.isUiVisible,
-                            enter = fadeIn(),
-                            exit = fadeOut(),
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 24.dp)
-                        ) {
+                    Box(
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "1080p Master",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                // Tags Pill Row
+                if (currentWp.tags.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        currentWp.tags.take(5).forEach { tag ->
                             Box(
                                 modifier = Modifier
-                                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
-                                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                                    .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "Scroll for details & recommendations",
-                                        color = Color.White.copy(alpha = 0.9f),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Icon(
-                                        imageVector = Icons.Default.KeyboardArrowDown,
-                                        contentDescription = null,
-                                        tint = XiaomiOrange,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
+                                Text(
+                                    text = "#$tag",
+                                    color = Color(0xFFD1D5DB),
+                                    fontSize = 11.sp
+                                )
                             }
                         }
                     }
                 }
 
-                // Section 2: Wallpaper Metadata & Action Buttons
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = currentWp.title,
-                                    color = Color.White,
-                                    fontSize = 22.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                Spacer(modifier = Modifier.height(20.dp))
 
-                                Spacer(modifier = Modifier.height(4.dp))
+                // Similar Wallpapers Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = XiaomiOrange,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Similar Wallpapers",
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
 
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.clickable { onOpenAuthor(currentWp.author) }
-                                ) {
-                                    Text(
-                                        text = "By ${currentWp.author}",
-                                        color = Color(0xFFD1D5DB),
-                                        fontSize = 14.sp
-                                    )
-                                    if (currentWp.verifiedStudio) {
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Icon(
-                                            imageVector = Icons.Default.Verified,
-                                            contentDescription = "Verified Studio",
-                                            tint = XiaomiOrange,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Recommendations Grid inside Bottom Sheet
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    state = sheetListState,
+                    contentPadding = PaddingValues(bottom = 32.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                ) {
+                    itemsIndexed(state.relatedWallpapers, key = { _, it -> it.id }) { relIdx, relWp ->
+                        WallpaperCard(
+                            wallpaper = relWp,
+                            isDense = false,
+                            onClick = {
+                                showDetailsSheet = false
+                                val nextSessionId = "rec_${relWp.id}_${System.currentTimeMillis()}"
+                                DetailNavigationState.saveSession(nextSessionId, state.relatedWallpapers)
+                                onOpenRelated(nextSessionId, relWp, relIdx)
                             }
+                        )
+                    }
 
+                    if (state.isLoadingRelatedMore) {
+                        item {
                             Box(
                                 modifier = Modifier
-                                    .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = XiaomiOrange, strokeWidth = 2.dp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(DarkBackground)
+    ) {
+        if (currentWp == null && swipeList.isEmpty()) {
+            CircularProgressIndicator(
+                color = XiaomiOrange,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        } else {
+            // Fullscreen Swipeable Hero Wallpaper Viewer
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                val wp = swipeList.getOrNull(page) ?: currentWp
+                if (wp != null) {
+                    var scale by remember { mutableFloatStateOf(1f) }
+                    var offset by remember { mutableStateOf(Offset.Zero) }
+
+                    val transformState = rememberTransformableState { zoomChange, offsetChange, _ ->
+                        scale = (scale * zoomChange).coerceIn(1f, 4f)
+                        if (scale > 1f) {
+                            offset += offsetChange
+                        } else {
+                            offset = Offset.Zero
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onDoubleTap = {
+                                        scale = if (scale > 1.2f) 1f else 2.5f
+                                        offset = Offset.Zero
+                                    },
+                                    onTap = {
+                                        viewModel.toggleUiVisibility()
+                                    }
+                                )
+                            }
+                            .transformable(state = transformState)
+                    ) {
+                        // Progressive Loading: Instant cached thumbnail placeholder -> Crisp 1080p preview
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(wp.previewUrl) // High-definition 1080p preview!
+                                .placeholderMemoryCacheKey(wp.thumbnailUrl)
+                                .memoryCachePolicy(CachePolicy.ENABLED)
+                                .diskCachePolicy(CachePolicy.ENABLED)
+                                .crossfade(300)
+                                .build(),
+                            contentDescription = wp.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                    translationX = offset.x
+                                    translationY = offset.y
+                                }
+                        )
+                    }
+                }
+            }
+
+            // Top Floating Navigation Bar
+            AnimatedVisibility(
+                visible = state.isUiVisible,
+                enter = fadeIn() + slideInVertically { -it },
+                exit = fadeOut() + slideOutVertically { -it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)
+                            )
+                        )
+                        .statusBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        // Back Button
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color.White
+                            )
+                        }
+
+                        // Index Pill Indicator (e.g. "5 / 24")
+                        if (swipeList.size > 1) {
+                            Box(
+                                modifier = Modifier
+                                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
+                                    .border(0.5.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                                    .padding(horizontal = 14.dp, vertical = 6.dp)
                             ) {
                                 Text(
-                                    text = "${currentWp.width}x${currentWp.height} Master",
+                                    text = "${pagerState.currentPage + 1} / ${swipeList.size}",
                                     color = Color.White,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium
@@ -262,187 +441,131 @@ fun DetailScreen(
                             }
                         }
 
-                        // Tags pill row
-                        if (currentWp.tags.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                currentWp.tags.take(4).forEach { tag ->
-                                    Box(
-                                        modifier = Modifier
-                                            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
-                                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                                    ) {
-                                        Text(
-                                            text = "#$tag",
-                                            color = Color(0xFF9CA3AF),
-                                            fontSize = 11.sp
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        // Large Action Buttons: Apply Wallpaper & Download Master
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Button(
-                                onClick = { showSetDialog = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = XiaomiOrange),
-                                shape = RoundedCornerShape(16.dp),
+                        // Action Icons: Details Sheet & Favorite
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            IconButton(
+                                onClick = { showDetailsSheet = true },
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .height(54.dp)
+                                    .size(42.dp)
+                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
                             ) {
-                                Icon(Icons.Default.Wallpaper, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Apply", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = "Details & Similar",
+                                    tint = Color.White
+                                )
                             }
 
-                            Button(
-                                onClick = { viewModel.downloadMaster(context) },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.16f)),
-                                shape = RoundedCornerShape(16.dp),
+                            IconButton(
+                                onClick = { viewModel.toggleFavorite() },
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .height(54.dp),
-                                enabled = !state.isDownloading
+                                    .size(42.dp)
+                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
                             ) {
-                                if (state.isDownloading) {
-                                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-                                } else {
-                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(20.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Download", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                }
+                                Icon(
+                                    imageVector = if (state.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = "Favorite",
+                                    tint = if (state.isFavorite) XiaomiOrange else Color.White
+                                )
                             }
-                        }
-
-                        Spacer(modifier = Modifier.height(28.dp))
-
-                        Text(
-                            text = "Similar Wallpapers",
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Fresh recommendations derived from this style",
-                            color = Color(0xFF9CA3AF),
-                            fontSize = 12.sp
-                        )
-                        Spacer(modifier = Modifier.height(14.dp))
-                    }
-                }
-
-                // Section 3: 2-Column Vertical Grid of Recommended Wallpapers
-                val pairs = state.relatedWallpapers.chunked(2)
-                itemsIndexed(pairs) { rowIndex, rowWallpapers ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        for ((itemIndex, wp) in rowWallpapers.withIndex()) {
-                            val absoluteIndex = (rowIndex * 2) + itemIndex
-                            WallpaperCard(
-                                wallpaper = wp,
-                                isDense = false,
-                                onClick = {
-                                    // Save current recommendation list as session for Depth 2
-                                    val nextSessionId = "rec_${wp.id}_${System.currentTimeMillis()}"
-                                    DetailNavigationState.saveSession(nextSessionId, state.relatedWallpapers)
-                                    onOpenRelated(nextSessionId, wp, absoluteIndex)
-                                },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                        if (rowWallpapers.size == 1) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
-                }
-
-                if (state.isLoadingRelatedMore) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(color = XiaomiOrange, strokeWidth = 2.5.dp)
                         }
                     }
                 }
             }
 
-            // Top Control Bar (Fades in/out on single tap)
+            // Bottom Floating Action Dock
             AnimatedVisibility(
                 visible = state.isUiVisible,
-                enter = fadeIn(),
-                exit = fadeOut(),
+                enter = fadeIn() + slideInVertically { it },
+                exit = fadeOut() + slideOutVertically { it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .align(Alignment.TopCenter)
+                    .align(Alignment.BottomCenter)
             ) {
-                Row(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    // Back Button
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                            )
                         )
-                    }
-
-                    // Index Pill Indicator (e.g. "14 / 60")
-                    if (swipeList.size > 1) {
-                        Box(
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 18.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Apply Wallpaper Button (Primary)
+                        Button(
+                            onClick = { showSetDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = XiaomiOrange),
+                            shape = RoundedCornerShape(18.dp),
                             modifier = Modifier
-                                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .weight(1f)
+                                .height(54.dp)
                         ) {
+                            Icon(
+                                imageVector = Icons.Default.Wallpaper,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "${pagerState.currentPage + 1} / ${swipeList.size}",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
+                                text = "Apply",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
-                    }
 
-                    // Favorite Button
-                    IconButton(
-                        onClick = { viewModel.toggleFavorite() },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = if (state.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            contentDescription = "Favorite",
-                            tint = if (state.isFavorite) XiaomiOrange else Color.White
-                        )
+                        // Download Master Button (Secondary)
+                        Button(
+                            onClick = { viewModel.downloadMaster(context) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White.copy(alpha = 0.18f)
+                            ),
+                            shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(54.dp),
+                            enabled = !state.isDownloading
+                        ) {
+                            if (state.isDownloading) {
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Download",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        // Quick Similar Button
+                        IconButton(
+                            onClick = { showDetailsSheet = true },
+                            modifier = Modifier
+                                .size(54.dp)
+                                .background(Color.White.copy(alpha = 0.18f), RoundedCornerShape(18.dp))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "Similar Wallpapers",
+                                tint = XiaomiOrange
+                            )
+                        }
                     }
                 }
             }

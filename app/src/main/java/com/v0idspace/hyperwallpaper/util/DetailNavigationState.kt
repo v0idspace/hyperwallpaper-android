@@ -4,8 +4,8 @@ import com.v0idspace.hyperwallpaper.data.model.Wallpaper
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Thread-safe navigation session store to manage horizontal swipeable lists
- * across infinite recommendation depth levels without state corruption or index bugs.
+ * Thread-safe navigation session store to manage wallpaper lists
+ * across navigation levels and swipeable views without state corruption or index desync bugs.
  */
 object DetailNavigationState {
 
@@ -23,5 +23,9 @@ object DetailNavigationState {
 
     fun removeSession(sessionId: String) {
         sessionStore.remove(sessionId)
+    }
+
+    fun clear() {
+        sessionStore.clear()
     }
 }

@@ -124,7 +124,8 @@ class CatalogViewModel(
                 }
 
                 currentOffset += newItems.size
-                val updatedList = if (reset) newItems else _uiState.value.wallpapers + newItems
+                val rawCombined = if (reset) newItems else _uiState.value.wallpapers + newItems
+                val updatedList = rawCombined.distinctBy { it.id }
 
                 _uiState.value = _uiState.value.copy(
                     wallpapers = updatedList,

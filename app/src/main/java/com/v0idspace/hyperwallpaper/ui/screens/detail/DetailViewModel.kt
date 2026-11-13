@@ -21,10 +21,12 @@ import kotlinx.coroutines.launch
 data class DetailUiState(
     val swipeableList: List<Wallpaper> = emptyList(),
     val currentWallpaper: Wallpaper? = null,
+    val currentIndex: Int = 0,
     val isFavorite: Boolean = false,
     val isApplying: Boolean = false,
     val isDownloading: Boolean = false,
     val isUiVisible: Boolean = true,
+    val isBottomSheetVisible: Boolean = false,
     val relatedWallpapers: List<Wallpaper> = emptyList(),
     val isLoadingRelatedMore: Boolean = false,
     val message: String? = null
@@ -40,30 +42,37 @@ class DetailViewModel(
 
     private var loadRelatedJob: Job? = null
     private var relatedPage = 0
+    private var isSessionInitialized = false
 
     fun initSession(sessionId: String, initialWallpaperId: String, initialIndex: Int) {
-        // Retrieve the session list belonging specifically to this navigation level
-        val sessionList = DetailNavigationState.getSession(sessionId).orEmpty()
+        if (isSessionInitialized) return
+        isSessionInitialized = true
 
+        val sessionList = DetailNavigationState.getSession(sessionId).orEmpty()
         val activeList: List<Wallpaper>
         val initialWp: Wallpaper?
+        val calculatedIndex: Int
 
         if (sessionList.isNotEmpty()) {
             activeList = sessionList
-            val validIndex = initialIndex.coerceIn(0, sessionList.size - 1)
-            initialWp = sessionList.getOrNull(validIndex) 
-                ?: sessionList.find { it.id == initialWallpaperId } 
-                ?: sessionList.first()
+            val foundIndex = sessionList.indexOfFirst { it.id == initialWallpaperId }
+            calculatedIndex = if (foundIndex >= 0) {
+                foundIndex
+            } else {
+                initialIndex.coerceIn(0, sessionList.size - 1)
+            }
+            initialWp = sessionList.getOrNull(calculatedIndex) ?: sessionList.firstOrNull()
         } else {
-            // Direct link or fallback: lookup by ID from repository cache
             val cached = wallpaperRepository.getCachedWallpaper(initialWallpaperId)
             activeList = listOfNotNull(cached)
             initialWp = cached
+            calculatedIndex = 0
         }
 
         _uiState.value = _uiState.value.copy(
             swipeableList = activeList,
             currentWallpaper = initialWp,
+            currentIndex = calculatedIndex,
             isFavorite = initialWp?.let { favoritesRepository.isFavorite(it.id) } ?: false
         )
 
@@ -79,6 +88,7 @@ class DetailViewModel(
 
         _uiState.value = _uiState.value.copy(
             currentWallpaper = newWp,
+            currentIndex = page,
             isFavorite = favoritesRepository.isFavorite(newWp.id),
             relatedWallpapers = emptyList(),
             isLoadingRelatedMore = false
@@ -89,6 +99,10 @@ class DetailViewModel(
 
     fun toggleUiVisibility() {
         _uiState.value = _uiState.value.copy(isUiVisible = !_uiState.value.isUiVisible)
+    }
+
+    fun setBottomSheetVisible(visible: Boolean) {
+        _uiState.value = _uiState.value.copy(isBottomSheetVisible = visible)
     }
 
     fun loadMoreRelated() {
@@ -111,7 +125,6 @@ class DetailViewModel(
                 )
                 relatedPage++
 
-                // Strict deduplication against already displayed recommendations and current wallpaper
                 val currentIds = _uiState.value.relatedWallpapers.map { it.id }.toSet()
                 val filtered = newRelated.filter { !currentIds.contains(it.id) && it.id != wallpaper.id }
 
@@ -138,10 +151,11 @@ class DetailViewModel(
         val wp = _uiState.value.currentWallpaper ?: return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isApplying = true)
+            // Use downloadUrl for full uncompressed master resolution wallpaper setting
             val result = WallpaperManagerHelper.setWallpaperDirect(context, wp.downloadUrl, target)
             _uiState.value = _uiState.value.copy(
                 isApplying = false,
-                message = if (result.isSuccess) "Wallpaper set successfully!" else "Failed to set: ${result.exceptionOrNull()?.message}"
+                message = if (result.isSuccess) "Wallpaper applied successfully!" else "Failed: ${result.exceptionOrNull()?.message}"
             )
             onDone()
         }
@@ -153,16 +167,18 @@ class DetailViewModel(
             _uiState.value = _uiState.value.copy(isApplying = true)
             val result = WallpaperManagerHelper.launchSystemCropPicker(context, wp.downloadUrl)
             _uiState.value = _uiState.value.copy(isApplying = false)
-            result.onSuccess { intent ->
-                onIntentReady(intent)
-            }.onFailure {
-                _uiState.value = _uiState.value.copy(message = "Failed to launch crop picker: ${it.message}")
+            if (result.isSuccess) {
+                onIntentReady(result.getOrThrow())
+            } else {
+                _uiState.value = _uiState.value.copy(message = "Crop picker failed: ${result.exceptionOrNull()?.message}")
             }
         }
     }
 
     fun downloadMaster(context: Context) {
         val wp = _uiState.value.currentWallpaper ?: return
+        if (_uiState.value.isDownloading) return
+
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isDownloading = true)
             val result = MediaStoreHelper.saveWallpaperToGallery(
@@ -173,7 +189,7 @@ class DetailViewModel(
             )
             _uiState.value = _uiState.value.copy(
                 isDownloading = false,
-                message = if (result.isSuccess) "Master saved to Pictures/HyperWallpapers" else "Download error: ${result.exceptionOrNull()?.message}"
+                message = if (result.isSuccess) "Original Master saved to Pictures/HyperWallpapers!" else "Download failed: ${result.exceptionOrNull()?.message}"
             )
         }
     }

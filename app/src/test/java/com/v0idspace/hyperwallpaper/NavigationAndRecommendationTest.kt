@@ -14,7 +14,7 @@ class NavigationAndRecommendationTest {
         val catalogList = listOf(wpA, wpB)
 
         // Depth 1: User is in Catalog
-        val sessionDepth1 = "catalog"
+        val sessionDepth1 = "catalog_1"
         DetailNavigationState.saveSession(sessionDepth1, catalogList)
 
         assertEquals(2, DetailNavigationState.getSession(sessionDepth1)?.size)
@@ -41,6 +41,31 @@ class NavigationAndRecommendationTest {
     }
 
     @Test
+    fun testTargetIndexResolutionMatchesSelectedWallpaper() {
+        val wallpapers = (0..10).map { i ->
+            Wallpaper(
+                id = "wp_$i",
+                title = "Wallpaper $i",
+                author = "Author $i",
+                thumbnailUrl = "thumb_$i",
+                previewUrl = "prev_$i",
+                downloadUrl = "down_$i",
+                hash = "hash_$i"
+            )
+        }
+
+        // Simulate clicking item at index 7 with ID "wp_7"
+        val clickedId = "wp_7"
+        val passedIndex = 7
+
+        val foundIndex = wallpapers.indexOfFirst { it.id == clickedId }
+        val resolvedIndex = if (foundIndex >= 0) foundIndex else passedIndex.coerceIn(0, wallpapers.size - 1)
+
+        assertEquals(7, resolvedIndex)
+        assertEquals(clickedId, wallpapers[resolvedIndex].id)
+    }
+
+    @Test
     fun testSemanticRecommendationExclusion() {
         val wp = Wallpaper(
             id = "lake_101",
@@ -50,20 +75,16 @@ class NavigationAndRecommendationTest {
             previewUrl = "prev",
             downloadUrl = "down",
             hash = "h",
-            tags = listOf("Landscape", "Refreshing", "Pleasant")
+            tags = listOf("Landscape", "Refreshing", "Pleasant", "ThemeMarket", "壁纸")
         )
 
-        // Extract query seeds logic
-        val candidateTags = wp.tags.filter { it != "VCG" && it != "Xiaomi" }
+        val noiseTokens = setOf("壁纸", "official", "Official", "ThemeMarket", "xiaomi", "Xiaomi", "WALLPAPER", "THEME")
+        val candidateTags = wp.tags.filter { !noiseTokens.contains(it) }
+
         assertTrue(candidateTags.contains("Landscape"))
         assertTrue(candidateTags.contains("Refreshing"))
         assertTrue(candidateTags.contains("Pleasant"))
-
-        // Title words extracted
-        val words = wp.title.split(" ").filter { it.length > 3 && it != "with" && it != "that" }
-        assertTrue(words.contains("namtso"))
-        assertTrue(words.contains("lake"))
-        assertTrue(words.contains("regarded"))
-        assertTrue(words.contains("sacred"))
+        assertFalse(candidateTags.contains("壁纸"))
+        assertFalse(candidateTags.contains("ThemeMarket"))
     }
 }

@@ -79,10 +79,16 @@ object WallpaperManagerHelper {
                 }
             }
 
-            val uri = Uri.fromFile(cacheFile)
+            // Secure URI via FileProvider to avoid FileUriExposedException on Android 7+
+            val uri: Uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                cacheFile
+            )
+
             val intent = Intent(WallpaperManager.ACTION_CROP_AND_SET_WALLPAPER).apply {
-                setDataAndType(uri, "image/*")
-                putExtra("mimeType", "image/*")
+                setDataAndType(uri, "image/jpeg")
+                putExtra("mimeType", "image/jpeg")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }

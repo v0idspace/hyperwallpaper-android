@@ -33,8 +33,9 @@ fun AppNavigation() {
                 viewModel = catalogViewModel,
                 onWallpaperClick = { wp, index ->
                     val wallpapers = catalogViewModel.uiState.value.wallpapers
-                    DetailNavigationState.saveSession("catalog", wallpapers)
-                    navController.navigate("detail/catalog/${wp.id}/$index")
+                    val sessionId = "catalog_${System.currentTimeMillis()}"
+                    DetailNavigationState.saveSession(sessionId, wallpapers)
+                    navController.navigate("detail/$sessionId/${wp.id}/$index")
                 },
                 onOpenFavorites = {
                     navController.navigate("favorites")

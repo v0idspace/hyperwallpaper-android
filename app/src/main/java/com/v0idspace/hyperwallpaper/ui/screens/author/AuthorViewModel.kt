@@ -58,8 +58,9 @@ class AuthorViewModel(
             try {
                 val list = repository.getAuthorPortfolio(state.authorName, currentOffset, 18, "EEA")
                 currentOffset += list.size
+                val combined = (_uiState.value.wallpapers + list).distinctBy { it.id }
                 _uiState.value = _uiState.value.copy(
-                    wallpapers = _uiState.value.wallpapers + list,
+                    wallpapers = combined,
                     isLoadingMore = false
                 )
             } catch (e: Exception) {
